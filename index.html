@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grotesk</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- ============================== GİRİŞ ============================== -->
+  <div id="login-page" class="login-page">
+    <div class="login-box">
+      <h1 class="login-title">Grotesk</h1>
+      <form id="login-form" autocomplete="off">
+        <input type="text"     id="login-user" placeholder="İsim"  />
+        <input type="password" id="login-pass" placeholder="Şifre" />
+        <button type="submit">Giriş</button>
+        <p id="login-error"></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================== ANA SİTE ============================== -->
+  <div id="main-site" class="main-site hidden">
+
+    <!-- HERO: arka plan görseli, kaydırılınca siyaha dönüşür -->
+    <div class="hero-wrap">
+      <div class="hero-bg"></div>
+      <div class="hero-fade"></div>
+    </div>
+
+    <!-- LAYOUT: sol sidebar + sağ içerik -->
+    <div class="layout">
+
+      <!-- SOL SIDEBAR -->
+      <aside class="sidebar">
+        <div class="sidebar-inner">
+          <div class="site-title">Grotesk</div>
+          <nav class="panel-nav">
+            <a href="#" class="panel-link active" data-panel="home">Anasayfa</a>
+            <a href="#" class="panel-link" data-panel="metinler">Metinler</a>
+            <a href="#" class="panel-link" data-panel="muzik">Müzik</a>
+            <a href="#" class="panel-link" data-panel="resim">Resim</a>
+            <a href="#" class="panel-link" data-panel="fotograf">Fotoğraf</a>
+            <a href="#" class="panel-link" data-panel="sinema">Sinema</a>
+            <a href="#" class="panel-link" data-panel="performans">Performans</a>
+          </nav>
+        </div>
+      </aside>
+
+      <!-- SAĞ İÇERİK -->
+      <main class="content-area">
+
+        <!-- ARAMA -->
+        <div class="search-wrap">
+          <input type="text" id="search-input" class="search-input" placeholder="Ara…" />
+        </div>
+
+        <!-- ---- ANASAYFA ---- -->
+        <section class="panel active" id="panel-home">
+          <div class="entries-list" id="home-entries"></div>
+        </section>
+
+        <!-- ---- METİNLER ---- -->
+        <section class="panel" id="panel-metinler">
+          <button class="add-btn" data-cat="metinler">+ Metin / İnceleme Ekle</button>
+          <div class="entries-list" id="metinler-entries"></div>
+        </section>
+
+        <!-- ---- MÜZİK ---- -->
+        <section class="panel" id="panel-muzik">
+          <button class="add-btn" data-cat="muzik">+ İçerik Ekle</button>
+          <div class="entries-list" id="muzik-entries"></div>
+        </section>
+
+        <!-- ---- RESİM ---- -->
+        <section class="panel" id="panel-resim">
+          <button class="add-btn" data-cat="resim">+ İçerik Ekle</button>
+          <div class="entries-list" id="resim-entries"></div>
+        </section>
+
+        <!-- ---- FOTOĞRAF ---- -->
+        <section class="panel" id="panel-fotograf">
+          <button class="add-btn" data-cat="fotograf">+ İçerik Ekle</button>
+          <div class="entries-list" id="fotograf-entries"></div>
+        </section>
+
+        <!-- ---- SİNEMA ---- -->
+        <section class="panel" id="panel-sinema">
+          <button class="add-btn" data-cat="sinema">+ İçerik Ekle</button>
+          <div class="entries-list" id="sinema-entries"></div>
+        </section>
+
+        <!-- ---- PERFORMANS ---- -->
+        <section class="panel" id="panel-performans">
+          <button class="add-btn" data-cat="performans">+ İçerik Ekle</button>
+          <div class="entries-list" id="performans-entries"></div>
+        </section>
+
+      </main>
+    </div><!-- /layout -->
+  </div><!-- /main-site -->
+
+  <!-- ============================== MODAL: EKLE ============================== -->
+  <div class="modal-overlay hidden" id="add-modal">
+    <div class="modal-box">
+      <button class="modal-close" id="close-add-modal">✕</button>
+      <h2 class="modal-title">İçerik Ekle</h2>
+
+      <!-- Kategori -->
+      <div class="mf">
+        <label>Kategori</label>
+        <div class="cat-select-group" id="cat-select-group">
+          <button class="cat-btn active" data-cat="metinler">Metinler</button>
+          <button class="cat-btn" data-cat="muzik">Müzik</button>
+          <button class="cat-btn" data-cat="resim">Resim</button>
+          <button class="cat-btn" data-cat="fotograf">Fotoğraf</button>
+          <button class="cat-btn" data-cat="sinema">Sinema</button>
+          <button class="cat-btn" data-cat="performans">Performans</button>
+        </div>
+      </div>
+
+      <!-- Kendi metni (sadece Metinler) -->
+      <div class="mf" id="own-text-row">
+        <label class="cb-label">
+          <input type="checkbox" id="is-own-text" />
+          Bu metin bana ait
+        </label>
+      </div>
+
+      <!-- Başlık -->
+      <div class="mf">
+        <label>Başlık</label>
+        <input type="text" id="entry-title" placeholder="Başlık…" />
+      </div>
+
+      <!-- Dosya -->
+      <div class="mf">
+        <label>Dosya <span class="mf-sub">görsel, PDF veya herhangi bir dosya</span></label>
+        <label class="file-pick-label" for="entry-file">Dosya Seç</label>
+        <input type="file" id="entry-file" accept="*/*" />
+        <div id="file-preview" class="file-preview"></div>
+      </div>
+
+      <!-- İnceleme / Yorum -->
+      <div class="mf">
+        <label id="comment-lbl">İnceleme / Yorum <span class="mf-sub">isteğe bağlı — karakter sınırı yok</span></label>
+        <textarea id="entry-comment" rows="6" placeholder="Yazınızı buraya girin…"></textarea>
+      </div>
+
+      <!-- Gizli -->
+      <div class="mf">
+        <label class="cb-label">
+          <input type="checkbox" id="entry-hidden" />
+          Gizli olarak ekle
+        </label>
+      </div>
+
+      <button class="submit-btn" id="submit-entry">Ekle</button>
+    </div>
+  </div>
+
+  <!-- ============================== MODAL: GÖRÜNTÜLE ============================== -->
+  <div class="modal-overlay hidden" id="view-modal">
+    <div class="modal-box modal-wide">
+      <button class="modal-close" id="close-view-modal">✕</button>
+      <div id="view-body"></div>
+      <div class="view-actions" id="view-actions"></div>
+    </div>
+  </div>
+
+  <!-- ============================== MODAL: DÜZENLE ============================== -->
+  <div class="modal-overlay hidden" id="edit-modal">
+    <div class="modal-box">
+      <button class="modal-close" id="close-edit-modal">✕</button>
+      <h2 class="modal-title">Düzenle</h2>
+      <div class="mf">
+        <label>Başlık</label>
+        <input type="text" id="edit-title" />
+      </div>
+      <div class="mf" id="edit-own-row">
+        <label class="cb-label">
+          <input type="checkbox" id="edit-own" />
+          Bu metin bana ait
+        </label>
+      </div>
+      <div class="mf">
+        <label>İnceleme / Yorum</label>
+        <textarea id="edit-comment" rows="8"></textarea>
+      </div>
+      <div class="mf">
+        <label class="cb-label">
+          <input type="checkbox" id="edit-hidden" />
+          Gizli tut
+        </label>
+      </div>
+      <button class="submit-btn" id="submit-edit">Kaydet</button>
+    </div>
+  </div>
+
+<head>
+  <!-- Standart PNG Favicon (Önerilen: 32x32px veya 64x64px) -->
+  <link rel="icon" type="image/png" href="favicon.png">
+</head>
+
+  <script src="app.js"></script>
+</body>
+</html>
