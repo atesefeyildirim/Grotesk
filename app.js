@@ -1,8 +1,23 @@
-/* ===================================================
-   GROTESK — APP.JS  v2
-   =================================================== */
 
-/* ---------- GİRİŞ ---------- */
+/* Firebase Key */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDlPjfrhjpd5QlX9hNEJreH1D7OETGWFNU",
+  authDomain: "grotesk-48280.firebaseapp.com",
+  projectId: "grotesk-48280",
+  storageBucket: "grotesk-48280.firebasestorage.app",
+  messagingSenderId: "627010342156",
+  appId: "1:627010342156:web:e15f12c06a950026230d29",
+  measurementId: "G-Z8W4MXLF65"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+/* Giriş */
 const CREDS = { user: 'ateş', pass: '123' };
 
 document.getElementById('login-form').addEventListener('submit', e => {
@@ -18,12 +33,12 @@ document.getElementById('login-form').addEventListener('submit', e => {
   }
 });
 
-/* ---------- VERİ ---------- */
+/* Veri */
 let entries = [];
 try { entries = JSON.parse(localStorage.getItem('grotesk_v2') || 'null') || []; } catch { entries = []; }
 
 /* İlk açılışta demo verisini yükle */
-if (entries.length === 0) {
+if (entries.length === 0 && typeof DEMO_ENTRIES !== 'undefined') {
   entries = [...DEMO_ENTRIES];
   save();
 }
@@ -32,7 +47,7 @@ function save() { localStorage.setItem('grotesk_v2', JSON.stringify(entries)); }
 const CATS = ['metinler','muzik','resim','fotograf','sinema','performans'];
 const CAT_LABEL = { metinler:'Metinler', muzik:'Müzik', resim:'Resim', fotograf:'Fotoğraf', sinema:'Sinema', performans:'Performans' };
 
-/* ---------- PANEL NAV ---------- */
+/* Panel */
 const panelLinks = document.querySelectorAll('.panel-link');
 const panels     = document.querySelectorAll('.panel');
 
@@ -46,12 +61,12 @@ panelLinks.forEach(l => l.addEventListener('click', e => {
   e.preventDefault(); activatePanel(l.dataset.panel);
 }));
 
-/* ---------- ADD BUTTONS ---------- */
+/* Butonlar */
 document.querySelectorAll('.add-btn[data-cat]').forEach(btn => {
   btn.addEventListener('click', () => openAddModal(btn.dataset.cat));
 });
 
-/* ---------- ARAMA ---------- */
+/* Arama */
 document.getElementById('search-input').addEventListener('input', renderAll);
 
 function q() { return document.getElementById('search-input').value.trim().toLowerCase(); }
@@ -61,7 +76,7 @@ function matches(entry) {
   return `${entry.title} ${entry.comment} ${CAT_LABEL[entry.category]}`.toLowerCase().includes(sq);
 }
 
-/* ---------- RENDER ---------- */
+/* Render */
 function renderAll() {
   renderList('home-entries', [...entries].reverse(), true);
   CATS.forEach(cat => {
@@ -124,7 +139,6 @@ function buildCard(entry, showCat) {
   return card;
 }
 
-/* ---------- ADD MODAL ---------- */
 let pendingFile = { dataUrl: null, type: null, name: null };
 let activeCat   = 'metinler';
 let editingId   = null;
@@ -133,7 +147,7 @@ const addModal = document.getElementById('add-modal');
 document.getElementById('close-add-modal').addEventListener('click', () => addModal.classList.add('hidden'));
 addModal.addEventListener('click', e => { if (e.target === addModal) addModal.classList.add('hidden'); });
 
-/* Kategori butonları */
+
 document.getElementById('cat-select-group').addEventListener('click', e => {
   const btn = e.target.closest('.cat-btn');
   if (!btn) return;
@@ -169,7 +183,6 @@ function openAddModal(defaultCat) {
   addModal.classList.remove('hidden');
 }
 
-/* Dosya seçimi */
 document.getElementById('entry-file').addEventListener('change', function() {
   const file = this.files[0]; if (!file) return;
   pendingFile.type = file.type;
@@ -215,7 +228,6 @@ document.getElementById('submit-entry').addEventListener('click', () => {
   renderAll();
 });
 
-/* ---------- VIEW MODAL ---------- */
 const viewModal = document.getElementById('view-modal');
 document.getElementById('close-view-modal').addEventListener('click', () => viewModal.classList.add('hidden'));
 viewModal.addEventListener('click', e => { if (e.target === viewModal) viewModal.classList.add('hidden'); });
@@ -249,7 +261,6 @@ function openViewModal(id) {
   viewModal.classList.remove('hidden');
 }
 
-/* ---------- EDIT MODAL ---------- */
 const editModal = document.getElementById('edit-modal');
 document.getElementById('close-edit-modal').addEventListener('click', () => editModal.classList.add('hidden'));
 editModal.addEventListener('click', e => { if (e.target === editModal) editModal.classList.add('hidden'); });
@@ -276,7 +287,7 @@ document.getElementById('submit-edit').addEventListener('click', () => {
   renderAll();
 });
 
-/* ---------- HIDE / DELETE ---------- */
+
 function toggleHide(id) {
   const entry = entries.find(e => e.id === id); if (!entry) return;
   entry.isHidden = !entry.isHidden; save(); renderAll();
@@ -286,7 +297,7 @@ function deleteEntry(id) {
   entries = entries.filter(e => e.id !== id); save(); renderAll();
 }
 
-/* ---------- YARDIMCI ---------- */
+
 function isImg(t) { return t && t.startsWith('image/'); }
 function fmtDate(iso) {
   if (!iso) return '';
