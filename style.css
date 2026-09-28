@@ -8,14 +8,17 @@
   --font:    'EB Garamond', Georgia, serif;
   --sidebar: 250px;
 }
+
 html {
   background: var(--bg);
   color: var(--acc);
   font-family: var(--font);
   font-size: 16px;
+  /* Firefox Scrollbar */
   scrollbar-width: thin;
   scrollbar-color: #333 #000;
 }
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -66,8 +69,10 @@ a { text-decoration: none; }
 #login-form button:hover { background: var(--acc); color: #000; }
 #login-error { color: #aaa; font-size: 0.88rem; text-align: center; min-height: 16px; }
 
+
 .main-site { background: var(--bg); min-height: 100vh; }
 
+/* HERO */
 .hero-wrap {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
 }
@@ -80,9 +85,11 @@ a { text-decoration: none; }
   background: linear-gradient(to bottom, transparent, #000);
 }
 
+
 @media (max-width: 600px) {
   .hero-bg { background-image: url('bg-mobile.png'); background-position: right top; }
 }
+
 .layout {
   position: relative; z-index: 1;
   display: flex; min-height: 100vh;
@@ -100,6 +107,7 @@ a { text-decoration: none; }
   min-height: 100vh;
 }
 
+
 .site-title {
   font-family: var(--font); font-weight: 300; font-style: normal;
   font-size: clamp(2.6rem, 4vw, 3.8rem);
@@ -107,6 +115,7 @@ a { text-decoration: none; }
   line-height: 1; margin-bottom: 40px;
   user-select: none;
 }
+
 
 .panel-nav {
   display: flex; flex-direction: column; gap: 0;
@@ -132,6 +141,7 @@ a { text-decoration: none; }
   background: transparent;
 }
 
+
 .search-wrap { margin-bottom: 52px; }
 .search-input {
   background: transparent; border: none; border-bottom: 1px solid #555;
@@ -141,6 +151,7 @@ a { text-decoration: none; }
 }
 .search-input:focus { border-bottom-color: var(--acc); }
 .search-input::placeholder { color: #888; }
+
 
 .panel { display: none; }
 .panel.active { display: block; }
@@ -159,7 +170,7 @@ a { text-decoration: none; }
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 500px; 
+  max-width: 500px;
 }
 
 .entry-card {
@@ -187,7 +198,6 @@ a { text-decoration: none; }
   color: #666; letter-spacing: 0.12em; text-align: center;
   line-height: 1.3; padding: 6px;
 }
-
 
 .entry-meta { 
   min-width: 0; 
@@ -222,7 +232,6 @@ a { text-decoration: none; }
   margin-top: 8px;
   letter-spacing: 0.07em;
 }
-
 
 .entry-actions {
   display: flex; flex-direction: column;
@@ -263,7 +272,6 @@ a { text-decoration: none; }
   color: var(--acc); margin-bottom: 32px; letter-spacing: 0.06em;
 }
 
-
 .mf { margin-bottom: 24px; }
 .mf > label:first-child {
   display: block; font-size: 0.72rem; color: #a0a0a0;
@@ -284,6 +292,7 @@ a { text-decoration: none; }
 .mf input:focus, .mf textarea:focus { border-bottom-color: var(--acc); }
 .mf textarea { min-height: 140px; }
 
+/* Kategori seçici */
 .cat-select-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .cat-btn {
   background: transparent; border: 1px solid #555;
@@ -319,6 +328,7 @@ a { text-decoration: none; }
 }
 .submit-btn:hover { background: var(--acc); color: #000; }
 
+
 .view-cat  { font-size: 0.72rem; color: #a0a0a0; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 10px; }
 .view-ttl  { 
   font-size: 1.4rem; color: var(--acc); font-weight: 400; margin-bottom: 8px; letter-spacing: 0.04em;
@@ -335,7 +345,7 @@ a { text-decoration: none; }
   color: var(--acc); 
   line-height: 1.85; 
   white-space: pre-wrap; 
-  overflow-wrap: anywhere;
+  overflow-wrap: anywhere; 
   word-break: break-word;  
   width: 100%;
 }
