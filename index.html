@@ -4,37 +4,35 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Grotesk</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400&display=swap" rel="stylesheet" />
 </head>
 <body>
 
-
   <div id="login-page" class="login-page">
     <div class="login-box">
       <h1 class="login-title">Grotesk</h1>
       <form id="login-form" autocomplete="off">
-        <input type="text"     id="login-user" placeholder="İsim"  />
         <input type="password" id="login-pass" placeholder="Şifre" />
-        <button type="submit">Giriş</button>
+        <div class="login-buttons-group">
+          <button type="submit" id="btn-author-login">Yazar Girişi</button>
+          <button type="button" id="btn-reader-login" class="reader-login-btn">Okuyucu Girişi</button>
+        </div>
         <p id="login-error"></p>
       </form>
     </div>
   </div>
 
- 
   <div id="main-site" class="main-site hidden">
 
-    <!-- HERO: arka plan görseli, kaydırılınca siyaha dönüşür -->
     <div class="hero-wrap">
       <div class="hero-bg"></div>
       <div class="hero-fade"></div>
     </div>
 
-
     <div class="layout">
 
-    
       <aside class="sidebar">
         <div class="sidebar-inner">
           <div class="site-title">Grotesk</div>
@@ -47,53 +45,48 @@
             <a href="#" class="panel-link" data-panel="sinema">Sinema</a>
             <a href="#" class="panel-link" data-panel="performans">Performans</a>
           </nav>
+          <div class="sidebar-footer">
+            <span id="role-badge" class="role-badge"></span>
+            <button type="button" id="logout-btn" class="logout-btn">Çıkış Yap</button>
+          </div>
         </div>
       </aside>
 
-    
       <main class="content-area">
 
-      
         <div class="search-wrap">
           <input type="text" id="search-input" class="search-input" placeholder="Ara…" />
         </div>
 
-     
         <section class="panel active" id="panel-home">
           <div class="entries-list" id="home-entries"></div>
         </section>
 
-     
         <section class="panel" id="panel-metinler">
           <button class="add-btn" data-cat="metinler">+ Metin / İnceleme Ekle</button>
           <div class="entries-list" id="metinler-entries"></div>
         </section>
 
-      
         <section class="panel" id="panel-muzik">
           <button class="add-btn" data-cat="muzik">+ İçerik Ekle</button>
           <div class="entries-list" id="muzik-entries"></div>
         </section>
 
-      
         <section class="panel" id="panel-resim">
           <button class="add-btn" data-cat="resim">+ İçerik Ekle</button>
           <div class="entries-list" id="resim-entries"></div>
         </section>
 
-      
         <section class="panel" id="panel-fotograf">
           <button class="add-btn" data-cat="fotograf">+ İçerik Ekle</button>
           <div class="entries-list" id="fotograf-entries"></div>
         </section>
 
-       
         <section class="panel" id="panel-sinema">
           <button class="add-btn" data-cat="sinema">+ İçerik Ekle</button>
           <div class="entries-list" id="sinema-entries"></div>
         </section>
 
-      
         <section class="panel" id="panel-performans">
           <button class="add-btn" data-cat="performans">+ İçerik Ekle</button>
           <div class="entries-list" id="performans-entries"></div>
@@ -108,20 +101,18 @@
       <button class="modal-close" id="close-add-modal">✕</button>
       <h2 class="modal-title">İçerik Ekle</h2>
 
-      <!-- Kategori -->
       <div class="mf">
         <label>Kategori</label>
         <div class="cat-select-group" id="cat-select-group">
-          <button class="cat-btn active" data-cat="metinler">Metinler</button>
-          <button class="cat-btn" data-cat="muzik">Müzik</button>
-          <button class="cat-btn" data-cat="resim">Resim</button>
-          <button class="cat-btn" data-cat="fotograf">Fotoğraf</button>
-          <button class="cat-btn" data-cat="sinema">Sinema</button>
-          <button class="cat-btn" data-cat="performans">Performans</button>
+          <button type="button" class="cat-btn active" data-cat="metinler">Metinler</button>
+          <button type="button" class="cat-btn" data-cat="muzik">Müzik</button>
+          <button type="button" class="cat-btn" data-cat="resim">Resim</button>
+          <button type="button" class="cat-btn" data-cat="fotograf">Fotoğraf</button>
+          <button type="button" class="cat-btn" data-cat="sinema">Sinema</button>
+          <button type="button" class="cat-btn" data-cat="performans">Performans</button>
         </div>
       </div>
 
-      <!-- Kendi metni (sadece Metinler) -->
       <div class="mf" id="own-text-row">
         <label class="cb-label">
           <input type="checkbox" id="is-own-text" />
@@ -129,23 +120,27 @@
         </label>
       </div>
 
-      <!-- Başlık -->
       <div class="mf">
         <label>Başlık</label>
         <input type="text" id="entry-title" placeholder="Başlık…" />
       </div>
 
-      <!-- Dosya -->
       <div class="mf">
         <label>Dosya <span class="mf-sub">görsel, PDF veya herhangi bir dosya</span></label>
         <label class="file-pick-label" for="entry-file">Dosya Seç</label>
-        <input type="file" id="entry-file" accept="*/*" />
-        <div id="file-preview" class="file-preview"></div>
+        <input type="file" id="entry-file" accept="*/*" style="display:none;" />
+        <div id="file-preview" class="file-preview" style="margin-top:8px;"></div>
       </div>
 
       <div class="mf">
         <label id="comment-lbl">İnceleme / Yorum <span class="mf-sub">isteğe bağlı — karakter sınırı yok</span></label>
         <textarea id="entry-comment" rows="6" placeholder="Yazınızı buraya girin…"></textarea>
+      </div>
+
+      <!-- Grotesk Yazarı İsmi -->
+      <div class="mf">
+        <label>Grotesk Yazarı İsmi <span class="mf-sub">bu içeriği ekleyen kişi</span></label>
+        <input type="text" id="entry-author" placeholder="Grotesk yazarı ismi…" />
       </div>
 
       <div class="mf">
@@ -155,10 +150,10 @@
         </label>
       </div>
 
-      <button class="submit-btn" id="submit-entry">Ekle</button>
+      <button type="button" class="submit-btn" id="submit-entry">Ekle</button>
     </div>
   </div>
- 
+
   <div class="modal-overlay hidden" id="view-modal">
     <div class="modal-box modal-wide">
       <button class="modal-close" id="close-view-modal">✕</button>
@@ -166,7 +161,6 @@
       <div class="view-actions" id="view-actions"></div>
     </div>
   </div>
-
 
   <div class="modal-overlay hidden" id="edit-modal">
     <div class="modal-box">
@@ -192,14 +186,9 @@
           Gizli tut
         </label>
       </div>
-      <button class="submit-btn" id="submit-edit">Kaydet</button>
+      <button type="button" class="submit-btn" id="submit-edit">Kaydet</button>
     </div>
   </div>
-
-<head>
-
-  <link rel="icon" type="image/png" href="favicon.png">
-</head>
 
   <script type="module" src="app.js"></script>
 </body>
