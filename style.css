@@ -60,14 +60,27 @@ a { text-decoration: none; }
 }
 #login-form input:focus { border-bottom-color: var(--acc); }
 #login-form input::placeholder { color: #999; }
-#login-form button {
-  margin-top: 6px; background: transparent; border: 1px solid var(--dim);
+.login-buttons-group {
+  display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 6px;
+}
+#btn-author-login {
+  background: transparent; border: 1px solid var(--dim);
   color: var(--acc); font-family: var(--font); font-size: 1rem;
   padding: 11px 0; cursor: pointer; letter-spacing: 0.12em;
-  transition: background .2s, color .2s;
+  transition: background .2s, color .2s, border-color .2s;
+  width: 100%;
 }
-#login-form button:hover { background: var(--acc); color: #000; }
-#login-error { color: #aaa; font-size: 0.88rem; text-align: center; min-height: 16px; }
+#btn-author-login:hover:not(:disabled) { background: var(--acc); color: #000; }
+#btn-author-login:disabled { opacity: 0.4; cursor: not-allowed; border-color: #444; color: #777; }
+.reader-login-btn {
+  background: transparent; border: 1px solid #555;
+  color: #c0c0c0; font-family: var(--font); font-size: 0.94rem;
+  padding: 10px 0; cursor: pointer; letter-spacing: 0.12em;
+  transition: background .2s, color .2s, border-color .2s;
+  width: 100%;
+}
+.reader-login-btn:hover { border-color: #999; color: #fff; background: rgba(255,255,255,0.06); }
+#login-error { color: #ff6b6b; font-size: 0.85rem; text-align: center; min-height: 18px; line-height: 1.4; }
 
 
 .main-site { background: var(--bg); min-height: 100vh; }
@@ -106,8 +119,37 @@ a { text-decoration: none; }
   display: flex; flex-direction: column; gap: 0;
   min-height: 100vh;
 }
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.role-badge {
+  font-size: 0.74rem;
+  color: #999;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.logout-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #aaa;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  padding: 6px 14px;
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  width: fit-content;
+  transition: color .2s, border-color .2s;
+}
+.logout-btn:hover {
+  border-color: #888;
+  color: #fff;
+}
 
-
+/* Grotesk başlık — büyük, solda */
 .site-title {
   font-family: var(--font); font-weight: 300; font-style: normal;
   font-size: clamp(2.6rem, 4vw, 3.8rem);
@@ -144,13 +186,13 @@ a { text-decoration: none; }
 
 .search-wrap { margin-bottom: 52px; }
 .search-input {
-  background: transparent; border: none; border-bottom: 1px solid #555;
-  color: var(--acc); font-family: var(--font); font-size: 1.1rem;
+  background: transparent; border: none; border-bottom: 1px solid #777;
+  color: var(--acc); font-family: var(--font); font-size: 1.15rem;
   padding: 8px 0; width: 100%; max-width: 500px; outline: none;
   letter-spacing: 0.04em;
 }
 .search-input:focus { border-bottom-color: var(--acc); }
-.search-input::placeholder { color: #888; }
+.search-input::placeholder { color: #aaa; }
 
 
 .panel { display: none; }
@@ -178,7 +220,7 @@ a { text-decoration: none; }
   grid-template-columns: 72px 1fr auto;
   gap: 20px;
   padding: 20px 0;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #4a4a4a;
   cursor: pointer;
   transition: opacity .15s;
   align-items: start;
@@ -195,7 +237,7 @@ a { text-decoration: none; }
 .entry-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .thumb-logo {
   font-family: var(--font); font-size: 0.68rem;
-  color: #666; letter-spacing: 0.12em; text-align: center;
+  color: #888; letter-spacing: 0.12em; text-align: center;
   line-height: 1.3; padding: 6px;
 }
 
@@ -205,22 +247,22 @@ a { text-decoration: none; }
   word-break: break-word;
 }
 .entry-cat {
-  font-size: 0.76rem; color: #a0a0a0;
+  font-size: 0.76rem; color: #bfbfbf;
   letter-spacing: 0.18em;
   text-transform: uppercase; margin-bottom: 5px;
 }
 .entry-title {
-  font-size: 1.15rem; color: var(--acc); font-weight: 400;
+  font-size: 1.18rem; color: #ffffff; font-weight: 500;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-bottom: 5px;
 }
 .entry-own {
-  font-size: 0.82rem; color: #e0e0e0;
+  font-size: 0.82rem; color: #f0f0f0;
   font-style: italic;
   margin-bottom: 6px; letter-spacing: 0.06em;
 }
 .entry-preview {
-  font-size: 0.97rem; color: #d8d8d8;
+  font-size: 0.97rem; color: #dedede;
   line-height: 1.55;
   display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;
@@ -228,7 +270,7 @@ a { text-decoration: none; }
   word-break: break-word;
 }
 .entry-date {
-  font-size: 0.78rem; color: #999;
+  font-size: 0.78rem; color: #b5b5b5;
   margin-top: 8px;
   letter-spacing: 0.07em;
 }
@@ -238,7 +280,7 @@ a { text-decoration: none; }
   gap: 6px; align-items: flex-end; flex-shrink: 0;
 }
 .act-btn {
-  background: none; border: none; color: #a0a0a0;
+  background: none; border: none; color: #b8b8b8;
   font-family: var(--font); font-size: 0.74rem;
   cursor: pointer; letter-spacing: 0.08em; padding: 2px 0;
   transition: color .2s; white-space: nowrap;
@@ -350,10 +392,44 @@ a { text-decoration: none; }
   width: 100%;
 }
 
+.view-author-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  float: right;
+  margin-top: 24px;
+  padding: 8px 16px;
+  border: 1px solid #4a4a4a;
+  background: #111;
+  font-size: 0.86rem;
+  letter-spacing: 0.05em;
+}
+.view-author-box .author-lbl {
+  color: #999;
+  font-style: italic;
+  font-size: 0.8rem;
+}
+.view-author-box .author-val {
+  color: #fff;
+  font-weight: 500;
+}
+.view-body-clear {
+  clear: both;
+}
+
 .view-actions {
   display: flex; gap: 14px; margin-top: 28px;
   padding-top: 20px; border-top: 1px solid #333;
   flex-wrap: wrap;
+}
+
+/* Okuyucu Modu Kısıtlamaları */
+body.role-reader .add-btn,
+body.role-reader .entry-actions,
+body.role-reader #view-actions,
+body.role-reader #add-modal,
+body.role-reader #edit-modal {
+  display: none !important;
 }
 
 @media (max-width: 680px) {
