@@ -1,7 +1,20 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  serverTimestamp 
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { 
+  getStorage, 
+  ref, 
+  uploadBytes, 
+  getDownloadURL 
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
-/* Firebase Key */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDlPjfrhjpd5QlX9hNEJreH1D7OETGWFNU",
@@ -13,296 +26,288 @@ const firebaseConfig = {
   measurementId: "G-Z8W4MXLF65"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
 
-/* Giriş */
-const CREDS = { user: 'ateş', pass: '123' };
+const COLLECTION_NAME = "grotesk_entries";
+const STORAGE_FOLDER = "grotesk_uploads";
 
-document.getElementById('login-form').addEventListener('submit', e => {
-  e.preventDefault();
-  const u = document.getElementById('login-user').value.trim();
-  const p = document.getElementById('login-pass').value;
-  if (u === CREDS.user && p === CREDS.pass) {
-    document.getElementById('login-page').classList.add('hidden');
-    document.getElementById('main-site').classList.remove('hidden');
-    renderAll();
-  } else {
-    document.getElementById('login-error').textContent = 'Hatalı isim veya şifre.';
-  }
-});
 
-/* Veri */
-let entries = [];
-try { entries = JSON.parse(localStorage.getItem('grotesk_v2') || 'null') || []; } catch { entries = []; }
+let currentUser = localStorage.getItem("grotesk_user") || "";
 
-/* İlk açılışta demo verisini yükle */
-if (entries.length === 0 && typeof DEMO_ENTRIES !== 'undefined') {
-  entries = [...DEMO_ENTRIES];
-  save();
-}
-function save() { localStorage.setItem('grotesk_v2', JSON.stringify(entries)); }
+const loginPage = document.getElementById("login-page");
+const mainSite = document.getElementById("main-site");
+const loginForm = document.getElementById("login-form");
+const loginUser = document.getElementById("login-user");
+const loginError = document.getElementById("login-error");
 
-const CATS = ['metinler','muzik','resim','fotograf','sinema','performans'];
-const CAT_LABEL = { metinler:'Metinler', muzik:'Müzik', resim:'Resim', fotograf:'Fotoğraf', sinema:'Sinema', performans:'Performans' };
-
-/* Panel */
-const panelLinks = document.querySelectorAll('.panel-link');
-const panels     = document.querySelectorAll('.panel');
-
-function activatePanel(name) {
-  panelLinks.forEach(l => l.classList.toggle('active', l.dataset.panel === name));
-  panels.forEach(p     => p.classList.toggle('active', p.id === `panel-${name}`));
-  renderAll();
+if (currentUser) {
+  showMainSite();
 }
 
-panelLinks.forEach(l => l.addEventListener('click', e => {
-  e.preventDefault(); activatePanel(l.dataset.panel);
-}));
+if (loginForm) {
+  loginForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const username = loginUser?.value.trim();
+    if (!username) {
+      if (loginError) loginError.innerText = "Lütfen bir isim girin.";
+      return;
+    }
 
-/* Butonlar */
-document.querySelectorAll('.add-btn[data-cat]').forEach(btn => {
-  btn.addEventListener('click', () => openAddModal(btn.dataset.cat));
-});
-
-/* Arama */
-document.getElementById('search-input').addEventListener('input', renderAll);
-
-function q() { return document.getElementById('search-input').value.trim().toLowerCase(); }
-function matches(entry) {
-  const sq = q();
-  if (!sq) return true;
-  return `${entry.title} ${entry.comment} ${CAT_LABEL[entry.category]}`.toLowerCase().includes(sq);
-}
-
-/* Render */
-function renderAll() {
-  renderList('home-entries', [...entries].reverse(), true);
-  CATS.forEach(cat => {
-    renderList(`${cat}-entries`, [...entries].filter(e => e.category === cat).reverse(), false);
+    currentUser = username;
+    localStorage.setItem("grotesk_user", currentUser);
+    showMainSite();
   });
 }
 
-function renderList(containerId, list, showCat) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  const filtered = list.filter(matches);
-  if (!filtered.length) { el.innerHTML = '<div class="empty">—</div>'; return; }
-  el.innerHTML = '';
-  filtered.forEach(entry => el.appendChild(buildCard(entry, showCat)));
+function showMainSite() {
+  if (loginPage) loginPage.classList.add("hidden");
+  if (mainSite) mainSite.classList.remove("hidden");
 }
 
-function buildCard(entry, showCat) {
-  const card = document.createElement('div');
-  card.className = 'entry-card' + (entry.isHidden ? ' entry-hidden' : '');
 
-  /* Thumb */
-  const thumb = document.createElement('div');
-  thumb.className = 'entry-thumb';
-  if (entry.fileDataUrl && isImg(entry.fileType)) {
-    const img = document.createElement('img');
-    img.src = entry.fileDataUrl; img.alt = entry.title;
-    thumb.appendChild(img);
-  } else {
-    thumb.innerHTML = `<div class="thumb-logo">Grotesk</div>`;
-  }
+const panelLinks = document.querySelectorAll(".panel-link");
+const panels = document.querySelectorAll(".panel");
 
-  /* Meta */
-  const meta = document.createElement('div');
-  meta.className = 'entry-meta';
-  if (showCat) meta.innerHTML += `<div class="entry-cat">${CAT_LABEL[entry.category]}</div>`;
-  meta.innerHTML += `<div class="entry-title">${esc(entry.title.length > 40 ? entry.title.slice(0, 40) + '…' : entry.title)}</div>`;
-  if (entry.isOwnText) meta.innerHTML += `<div class="entry-own">Bu metin bana ait</div>`;
-  if (entry.comment)   meta.innerHTML += `<div class="entry-preview">${esc(entry.comment.length > 40 ? entry.comment.slice(0, 40) + '…' : entry.comment)}</div>`;
-  meta.innerHTML += `<div class="entry-date">${fmtDate(entry.date)}</div>`;
+panelLinks.forEach(link => {
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    const targetPanel = link.dataset.panel;
 
-  /* Aksiyonlar */
-  const acts = document.createElement('div');
-  acts.className = 'entry-actions';
-  acts.innerHTML = `
-    <button class="act-btn" data-action="edit">Düzenle</button>
-    <button class="act-btn" data-action="hide">${entry.isHidden ? 'Göster' : 'Gizle'}</button>
-    <button class="act-btn" data-action="del">Sil</button>
+    panelLinks.forEach(l => l.classList.remove("active"));
+    panels.forEach(p => p.classList.remove("active"));
+
+    link.classList.add("active");
+    const activePanelEl = document.getElementById(`panel-${targetPanel}`);
+    if (activePanelEl) activePanelEl.classList.add("active");
+  });
+});
+
+
+const addModal = document.getElementById("add-modal");
+const closeAddModalBtn = document.getElementById("close-add-modal");
+const addBtns = document.querySelectorAll(".add-btn");
+const catBtns = document.querySelectorAll("#cat-select-group .cat-btn");
+
+let selectedCategory = "metinler";
+
+addBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const cat = btn.dataset.cat || "metinler";
+    setSelectedCategory(cat);
+    if (addModal) addModal.classList.remove("hidden");
+  });
+});
+
+if (closeAddModalBtn) {
+  closeAddModalBtn.addEventListener("click", () => {
+    if (addModal) addModal.classList.add("hidden");
+  });
+}
+
+catBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    setSelectedCategory(btn.dataset.cat);
+  });
+});
+
+function setSelectedCategory(cat) {
+  selectedCategory = cat;
+  catBtns.forEach(b => {
+    if (b.dataset.cat === cat) b.classList.add("active");
+    else b.classList.remove("active");
+  });
+}
+
+const fileInput = document.getElementById("entry-file");
+const filePreview = document.getElementById("file-preview");
+
+if (fileInput) {
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!filePreview) return;
+
+    if (file) {
+      filePreview.innerHTML = `<span style="font-size:0.8rem; color:#aaa;">Seçilen Dosya: ${file.name}</span>`;
+    } else {
+      filePreview.innerHTML = "";
+    }
+  });
+}
+
+const submitBtn = document.getElementById("submit-entry");
+const titleInput = document.getElementById("entry-title");
+const commentInput = document.getElementById("entry-comment");
+const isOwnCheck = document.getElementById("is-own-text");
+const isHiddenCheck = document.getElementById("entry-hidden");
+
+if (submitBtn) {
+  submitBtn.addEventListener("click", async () => {
+    const title = titleInput?.value.trim();
+    const comment = commentInput?.value.trim();
+    const isOwn = isOwnCheck?.checked || false;
+    const isHidden = isHiddenCheck?.checked || false;
+    const file = fileInput?.files[0];
+
+    if (!title && !comment && !file) {
+      alert("Lütfen en azından bir başlık, metin veya dosya seçin.");
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerText = "YÜKLENİYOR...";
+
+    try {
+      let fileUrl = "";
+      let fileName = "";
+
+      if (file) {
+        fileName = file.name;
+        const fileRef = ref(storage, `${STORAGE_FOLDER}/${Date.now()}_${file.name}`);
+        const snapshot = await uploadBytes(fileRef, file);
+        fileUrl = await getDownloadURL(snapshot.ref);
+      }
+
+      await addDoc(collection(db, COLLECTION_NAME), {
+        title: title || "Başlıksız",
+        comment: comment || "",
+        category: selectedCategory,
+        author: currentUser || "Anonim",
+        isOwn: isOwn,
+        isHidden: isHidden,
+        fileUrl: fileUrl,
+        fileName: fileName,
+        createdAt: serverTimestamp()
+      });
+
+      // Temizleme
+      if (titleInput) titleInput.value = "";
+      if (commentInput) commentInput.value = "";
+      if (fileInput) fileInput.value = "";
+      if (filePreview) filePreview.innerHTML = "";
+      if (isOwnCheck) isOwnCheck.checked = false;
+      if (isHiddenCheck) isHiddenCheck.checked = false;
+
+      if (addModal) addModal.classList.add("hidden");
+
+    } catch (err) {
+      console.error("Firebase Yükleme Hatası:", err);
+      alert("Yükleme sırasında hata oluştu: " + err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.innerText = "Ekle";
+    }
+  });
+}
+
+function listenEntries() {
+  const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
+
+  onSnapshot(q, (snapshot) => {
+    const categories = ["home", "metinler", "muzik", "resim", "fotograf", "sinema", "performans"];
+    categories.forEach(cat => {
+      const container = document.getElementById(`${cat}-entries`);
+      if (container) container.innerHTML = "";
+    });
+
+    if (snapshot.empty) return;
+
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      
+
+      if (data.isHidden && data.author !== currentUser) {
+        return;
+      }
+
+      const card = createCard(data, doc.id);
+
+      const targetCatContainer = document.getElementById(`${data.category}-entries`);
+      if (targetCatContainer) {
+        targetCatContainer.appendChild(card.cloneNode(true));
+      }
+
+      // Anasayfaya ekle
+      const homeContainer = document.getElementById("home-entries");
+      if (homeContainer) {
+        homeContainer.appendChild(card);
+      }
+    });
+  });
+}
+
+function createCard(data, id) {
+  const card = document.createElement("div");
+  card.className = "entry-card";
+
+  const dateStr = data.createdAt 
+    ? new Date(data.createdAt.seconds * 1000).toLocaleDateString("tr-TR") 
+    : "Şimdi";
+
+  const isImage = data.fileUrl && (
+    data.fileUrl.includes(".png") || 
+    data.fileUrl.includes(".jpg") || 
+    data.fileUrl.includes(".jpeg") || 
+    data.fileUrl.includes(".webp") ||
+    data.fileUrl.includes(".gif")
+  );
+
+  card.innerHTML = `
+    <div class="entry-thumb">
+      ${isImage 
+        ? `<img src="${data.fileUrl}" alt="${data.title}">` 
+        : `<div class="thumb-logo">GROTESK</div>`}
+    </div>
+    <div class="entry-meta">
+      <div class="entry-cat">${(data.category || "GENEL").toUpperCase()} ${data.isOwn ? '• (Özgün)' : ''}</div>
+      <div class="entry-title">${data.title}</div>
+      <div class="entry-own">${data.author || 'Anonim'}</div>
+      ${data.comment ? `<div class="entry-preview">${data.comment}</div>` : ''}
+      <div class="entry-date">${dateStr}</div>
+    </div>
   `;
-  acts.querySelectorAll('[data-action]').forEach(b => b.addEventListener('click', e => {
-    e.stopPropagation();
-    if (b.dataset.action === 'edit') openEditModal(entry.id);
-    if (b.dataset.action === 'hide') { toggleHide(entry.id); }
-    if (b.dataset.action === 'del')  { deleteEntry(entry.id); }
-  }));
 
-  card.addEventListener('click', () => openViewModal(entry.id));
-  card.appendChild(thumb);
-  card.appendChild(meta);
-  card.appendChild(acts);
+
+  card.addEventListener("click", () => openViewModal(data));
+
   return card;
 }
 
-let pendingFile = { dataUrl: null, type: null, name: null };
-let activeCat   = 'metinler';
-let editingId   = null;
+const viewModal = document.getElementById("view-modal");
+const closeViewModalBtn = document.getElementById("close-view-modal");
+const viewBody = document.getElementById("view-body");
 
-const addModal = document.getElementById('add-modal');
-document.getElementById('close-add-modal').addEventListener('click', () => addModal.classList.add('hidden'));
-addModal.addEventListener('click', e => { if (e.target === addModal) addModal.classList.add('hidden'); });
-
-
-document.getElementById('cat-select-group').addEventListener('click', e => {
-  const btn = e.target.closest('.cat-btn');
-  if (!btn) return;
-  document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  activeCat = btn.dataset.cat;
-  updateOwnVisibility();
-});
-
-function updateOwnVisibility() {
-  const row = document.getElementById('own-text-row');
-  row.style.display = activeCat === 'metinler' ? '' : 'none';
-  document.getElementById('comment-lbl').innerHTML =
-    activeCat === 'metinler' && document.getElementById('is-own-text').checked
-      ? 'Metin İçeriği <span class="mf-sub">karakter sınırı yok</span>'
-      : 'İnceleme / Yorum <span class="mf-sub">isteğe bağlı — karakter sınırı yok</span>';
-}
-
-document.getElementById('is-own-text').addEventListener('change', updateOwnVisibility);
-
-function openAddModal(defaultCat) {
-  activeCat = defaultCat || 'metinler';
-  document.querySelectorAll('.cat-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.cat === activeCat));
-  document.getElementById('entry-title').value   = '';
-  document.getElementById('entry-comment').value  = '';
-  document.getElementById('entry-hidden').checked = false;
-  document.getElementById('is-own-text').checked  = false;
-  document.getElementById('entry-file').value     = '';
-  document.getElementById('file-preview').innerHTML = '';
-  pendingFile = { dataUrl: null, type: null, name: null };
-  updateOwnVisibility();
-  addModal.classList.remove('hidden');
-}
-
-document.getElementById('entry-file').addEventListener('change', function() {
-  const file = this.files[0]; if (!file) return;
-  pendingFile.type = file.type;
-  pendingFile.name = file.name;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    pendingFile.dataUrl = ev.target.result;
-    const prev = document.getElementById('file-preview');
-    if (isImg(file.type)) {
-      prev.innerHTML = `<img src="${pendingFile.dataUrl}" alt="önizleme" />`;
-    } else {
-      prev.innerHTML = `<div class="fname">📄 ${esc(file.name)}</div>`;
-    }
-  };
-  reader.readAsDataURL(file);
-});
-
-/* Ekle */
-document.getElementById('submit-entry').addEventListener('click', () => {
-  const title   = document.getElementById('entry-title').value.trim();
-  const comment = document.getElementById('entry-comment').value.trim();
-  const hidden  = document.getElementById('entry-hidden').checked;
-  const isOwn   = activeCat === 'metinler' && document.getElementById('is-own-text').checked;
-
-  if (!title && !comment && !pendingFile.dataUrl) return;
-
-  const entry = {
-    id:          Date.now().toString(),
-    category:    activeCat,
-    title:       title || pendingFile.name || '(başlıksız)',
-    comment,
-    isOwnText:   isOwn,
-    isHidden:    hidden,
-    fileDataUrl: pendingFile.dataUrl,
-    fileType:    pendingFile.type,
-    fileName:    pendingFile.name,
-    date:        new Date().toISOString()
-  };
-
-  entries.push(entry);
-  save();
-  addModal.classList.add('hidden');
-  renderAll();
-});
-
-const viewModal = document.getElementById('view-modal');
-document.getElementById('close-view-modal').addEventListener('click', () => viewModal.classList.add('hidden'));
-viewModal.addEventListener('click', e => { if (e.target === viewModal) viewModal.classList.add('hidden'); });
-
-function openViewModal(id) {
-  const entry = entries.find(e => e.id === id); if (!entry) return;
-
-  let html = `<div class="view-cat">${CAT_LABEL[entry.category]}</div>`;
-  html += `<div class="view-ttl">${esc(entry.title)}</div>`;
-  if (entry.isOwnText) html += `<div class="view-own">Bu metin bana ait</div>`;
-  if (entry.fileDataUrl) {
-    html += `<div class="view-file">`;
-    if (isImg(entry.fileType)) html += `<img src="${entry.fileDataUrl}" alt="${esc(entry.title)}" />`;
-    else html += `<a href="${entry.fileDataUrl}" download="${esc(entry.fileName||'dosya')}">📄 ${esc(entry.fileName||'Dosyayı indir')}</a>`;
-    html += `</div>`;
-  }
-  if (entry.comment) html += `<div class="view-text">${esc(entry.comment)}</div>`;
-  document.getElementById('view-body').innerHTML = html;
-
-  const acts = document.getElementById('view-actions');
-  acts.innerHTML = '';
-  [['Düzenle', () => { viewModal.classList.add('hidden'); openEditModal(id); }],
-   [entry.isHidden ? 'Göster' : 'Gizle', () => { toggleHide(id); viewModal.classList.add('hidden'); }],
-   ['Sil', () => { deleteEntry(id); viewModal.classList.add('hidden'); }]
-  ].forEach(([label, fn]) => {
-    const btn = document.createElement('button');
-    btn.className = 'add-btn'; btn.textContent = label;
-    btn.addEventListener('click', fn); acts.appendChild(btn);
+if (closeViewModalBtn) {
+  closeViewModalBtn.addEventListener("click", () => {
+    if (viewModal) viewModal.classList.add("hidden");
   });
-
-  viewModal.classList.remove('hidden');
 }
 
-const editModal = document.getElementById('edit-modal');
-document.getElementById('close-edit-modal').addEventListener('click', () => editModal.classList.add('hidden'));
-editModal.addEventListener('click', e => { if (e.target === editModal) editModal.classList.add('hidden'); });
+function openViewModal(data) {
+  if (!viewBody || !viewModal) return;
 
-function openEditModal(id) {
-  const entry = entries.find(e => e.id === id); if (!entry) return;
-  editingId = id;
-  document.getElementById('edit-title').value   = entry.title || '';
-  document.getElementById('edit-comment').value  = entry.comment || '';
-  document.getElementById('edit-hidden').checked = !!entry.isHidden;
-  document.getElementById('edit-own').checked    = !!entry.isOwnText;
-  document.getElementById('edit-own-row').style.display = entry.category === 'metinler' ? '' : 'none';
-  editModal.classList.remove('hidden');
+  const isImage = data.fileUrl && (
+    data.fileUrl.includes(".png") || 
+    data.fileUrl.includes(".jpg") || 
+    data.fileUrl.includes(".jpeg") || 
+    data.fileUrl.includes(".webp")
+  );
+
+  viewBody.innerHTML = `
+    <h2 style="font-family:'EB Garamond', serif; font-size:1.8rem; margin-bottom:8px;">${data.title}</h2>
+    <div style="font-size:0.8rem; color:#888; margin-bottom:16px;">
+      Ekleyen: ${data.author} | Kategori: ${data.category?.toUpperCase()}
+    </div>
+    ${isImage ? `<img src="${data.fileUrl}" style="max-width:100%; height:auto; margin-bottom:16px; border-radius:4px;">` : ''}
+    ${data.fileUrl && !isImage ? `<div style="margin-bottom:16px;"><a href="${data.fileUrl}" target="_blank" style="color:#fff; text-decoration:underline;">Dosyayı İndir / Görüntüle (${data.fileName || 'Ekli Dosya'})</a></div>` : ''}
+    <p style="white-space: pre-wrap; line-height:1.6; color:#ddd;">${data.comment || ''}</p>
+  `;
+
+  viewModal.classList.remove("hidden");
 }
 
-document.getElementById('submit-edit').addEventListener('click', () => {
-  const entry = entries.find(e => e.id === editingId); if (!entry) return;
-  entry.title     = document.getElementById('edit-title').value.trim()   || entry.title;
-  entry.comment   = document.getElementById('edit-comment').value.trim();
-  entry.isHidden  = document.getElementById('edit-hidden').checked;
-  entry.isOwnText = entry.category === 'metinler' ? document.getElementById('edit-own').checked : false;
-  save();
-  editModal.classList.add('hidden');
-  renderAll();
+
+document.addEventListener("DOMContentLoaded", () => {
+  listenEntries();
 });
-
-
-function toggleHide(id) {
-  const entry = entries.find(e => e.id === id); if (!entry) return;
-  entry.isHidden = !entry.isHidden; save(); renderAll();
-}
-function deleteEntry(id) {
-  if (!confirm('Bu içeriği silmek istediğinizden emin misiniz?')) return;
-  entries = entries.filter(e => e.id !== id); save(); renderAll();
-}
-
-
-function isImg(t) { return t && t.startsWith('image/'); }
-function fmtDate(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('tr-TR', { day:'2-digit', month:'long', year:'numeric' });
-}
-function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
