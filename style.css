@@ -432,6 +432,31 @@ body.role-reader #edit-modal {
   display: none !important;
 }
 
+/* Sağ Alt İletişim Footer */
+.site-contact-footer {
+  position: fixed;
+  bottom: 24px;
+  right: 32px;
+  z-index: 100;
+  font-family: var(--font);
+  font-size: 0.88rem;
+  color: #999;
+  letter-spacing: 0.05em;
+  background: rgba(8, 8, 8, 0.75);
+  padding: 6px 14px;
+  border: 1px solid #333;
+  backdrop-filter: blur(4px);
+}
+.site-contact-footer a {
+  color: #dcdcdc;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.site-contact-footer a:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
 @media (max-width: 680px) {
   :root { --sidebar: 0px; }
 
@@ -457,4 +482,11 @@ body.role-reader #edit-modal {
   .entry-thumb { width: 52px; height: 52px; }
 
   .modal-box { padding: 28px 20px; }
+
+  .site-contact-footer {
+    bottom: 12px;
+    right: 14px;
+    font-size: 0.76rem;
+    padding: 4px 10px;
+  }
 }
