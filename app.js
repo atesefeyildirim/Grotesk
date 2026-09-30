@@ -38,9 +38,9 @@ const STORAGE_FOLDER = "grotesk_uploads";
 
 /* ===================================================
    GÜVENLİK & ŞİFRE (SHA-256 HASH)
-   Inspect yapıldığında şifre (123) kaynak kodda görünmez.
+   Inspect yapıldığında şifre kaynak kodda görünmez.
    =================================================== */
-const AUTH_HASH = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3";
+const AUTH_HASH = "9d06ac0aeaba527e1e3684820ea7c172f9d6ef645d0d8a249dfbd1ef4c8236ba";
 
 async function sha256(str) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
