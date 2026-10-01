@@ -300,15 +300,38 @@ if (fileInput) {
     if (!filePreview) return;
 
     if (file) {
-      filePreview.innerHTML = `<span style="font-size:0.8rem; color:#aaa;">Seçilen Dosya: ${escapeHtml(file.name)}</span>`;
+      filePreview.innerHTML = `
+        <div class="selected-file-wrap" style="display:inline-flex; align-items:center; gap:10px; margin-top:8px; padding:6px 12px; border:1px solid #444; background:#111;">
+          <span style="font-size:0.85rem; color:#ccc;">📄 ${escapeHtml(file.name)}</span>
+          <button type="button" id="remove-selected-file" class="remove-file-btn" style="background:transparent; border:1px solid #666; color:#ff7777; font-size:0.75rem; padding:3px 8px; cursor:pointer; font-family:var(--font); letter-spacing:0.06em; transition:all .2s;">Sil</button>
+        </div>
+      `;
+
+      const removeBtn = document.getElementById("remove-selected-file");
+      if (removeBtn) {
+        removeBtn.addEventListener("click", () => {
+          fileInput.value = "";
+          filePreview.innerHTML = "";
+        });
+      }
     } else {
       filePreview.innerHTML = "";
     }
   });
 }
 
+// Dosyayı Base64 metin koduna dönüştüren yardımcı fonksiyon
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (error) => reject(error);
+  });
+}
+
 /* ===================================================
-   İÇERİK KAYDETME (FIRESTORE)
+   İÇERİK KAYDETME (FIRESTORE - BASE64 DESTEKLİ)
    =================================================== */
 const submitBtn = document.getElementById("submit-entry");
 const titleInput = document.getElementById("entry-title");
@@ -336,18 +359,23 @@ if (submitBtn) {
       return;
     }
 
+    // Dosya boyutu kontrolü (Firestore 1 MB doküman sınırı nedeniyle 800 KB kontrolü)
+    if (file && file.size > 800 * 1024) {
+      alert("Dosya boyutu çok büyük! Lütfen 800 KB'dan küçük bir görsel/PDF seçin.");
+      return;
+    }
+
     submitBtn.disabled = true;
     submitBtn.innerText = "YÜKLENİYOR...";
 
     try {
-      let fileUrl = "";
+      let fileData = "";
       let fileName = "";
 
+      // Eğer kullanıcı bir dosya (görsel/PDF) seçtiyse Base64'e dönüştür
       if (file) {
+        fileData = await fileToBase64(file);
         fileName = file.name;
-        const fileRef = ref(storage, `${STORAGE_FOLDER}/${Date.now()}_${file.name}`);
-        const snapshot = await uploadBytes(fileRef, file);
-        fileUrl = await getDownloadURL(snapshot.ref);
       }
 
       await addDoc(collection(db, COLLECTION_NAME), {
@@ -357,7 +385,8 @@ if (submitBtn) {
         authorName: authorName,
         isOwn: isOwn,
         isHidden: isHidden,
-        fileUrl: fileUrl,
+        fileData: fileData,
+        fileUrl: fileData, // Geriye dönük uyumluluk
         fileName: fileName,
         createdAt: serverTimestamp()
       });
@@ -474,12 +503,14 @@ function createCard(data) {
     });
   }
 
-  const isImage = data.fileUrl && (
-    data.fileUrl.includes(".png") || 
-    data.fileUrl.includes(".jpg") || 
-    data.fileUrl.includes(".jpeg") || 
-    data.fileUrl.includes(".webp") ||
-    data.fileUrl.includes(".gif")
+  const mediaData = data.fileData || data.fileUrl;
+  const isImage = mediaData && (
+    mediaData.startsWith("data:image/") ||
+    mediaData.includes(".png") || 
+    mediaData.includes(".jpg") || 
+    mediaData.includes(".jpeg") || 
+    mediaData.includes(".webp") ||
+    mediaData.includes(".gif")
   );
 
   // 40 Karakter Kısıtları
@@ -494,7 +525,7 @@ function createCard(data) {
   card.innerHTML = `
     <div class="entry-thumb">
       ${isImage 
-        ? `<img src="${data.fileUrl}" alt="${escapeHtml(rawTitle)}">` 
+        ? `<img src="${mediaData}" alt="${escapeHtml(rawTitle)}">` 
         : `<div class="thumb-logo">GROTESK</div>`}
     </div>
     <div class="entry-meta">
@@ -572,30 +603,32 @@ if (viewModal) {
 function openViewModal(data) {
   if (!viewBody || !viewModal) return;
 
-  const isImage = data.fileUrl && (
-    data.fileUrl.includes(".png") || 
-    data.fileUrl.includes(".jpg") || 
-    data.fileUrl.includes(".jpeg") || 
-    data.fileUrl.includes(".webp") ||
-    data.fileUrl.includes(".gif")
+  const mediaData = data.fileData || data.fileUrl;
+  const isImage = mediaData && (
+    mediaData.startsWith("data:image/") ||
+    mediaData.includes(".png") || 
+    mediaData.includes(".jpg") || 
+    mediaData.includes(".jpeg") || 
+    mediaData.includes(".webp") ||
+    mediaData.includes(".gif")
   );
 
   const authorDisp = data.authorName || data.author || "Grotesk Yazarı";
 
+  let mediaHtml = "";
+  if (mediaData) {
+    if (isImage) {
+      mediaHtml = `<div class="view-file"><img src="${mediaData}" alt="${escapeHtml(data.fileName || data.title || '')}" style="max-width: 100%; height: auto; margin-top: 10px; border-radius: 4px;" /></div>`;
+    } else {
+      mediaHtml = `<div class="view-file" style="margin-top: 10px;"><a href="${mediaData}" download="${escapeHtml(data.fileName || 'dosya')}" style="color: var(--acc); text-decoration: underline;">📄 ${escapeHtml(data.fileName || 'Dosyayı İndir / Görüntüle')} (İndir / Görüntüle)</a></div>`;
+    }
+  }
+
   let html = `
     <div class="view-cat">${(data.category || "GENEL").toUpperCase()} ${data.isOwn ? '• (Özgün Metin)' : ''}</div>
     <div class="view-ttl">${escapeHtml(data.title || "Başlıksız")}</div>
+    ${mediaHtml}
   `;
-
-  if (data.fileUrl) {
-    html += `<div class="view-file">`;
-    if (isImage) {
-      html += `<img src="${data.fileUrl}" alt="${escapeHtml(data.title || "")}">`;
-    } else {
-      html += `<a href="${data.fileUrl}" target="_blank" download="${escapeHtml(data.fileName || 'dosya')}">📄 ${escapeHtml(data.fileName || "Dosyayı İndir")}</a>`;
-    }
-    html += `</div>`;
-  }
 
   if (data.comment) {
     html += `<div class="view-text">${escapeHtml(data.comment)}</div>`;
