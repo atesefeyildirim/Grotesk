@@ -45,6 +45,7 @@
             <a href="#" class="panel-link" data-panel="fotograf">Fotoğraf</a>
             <a href="#" class="panel-link" data-panel="sinema">Sinema</a>
             <a href="#" class="panel-link" data-panel="performans">Performans</a>
+            <a href="#" class="panel-link" data-panel="saved">Kaydedilenler</a>
           </nav>
           <div class="sidebar-footer">
             <span id="role-badge" class="role-badge"></span>
@@ -57,6 +58,13 @@
 
         <div class="search-wrap">
           <input type="text" id="search-input" class="search-input" placeholder="Ara…" />
+          <button type="button" id="saved-toggle-btn" class="saved-toggle-btn" title="Kaydedilenler">
+            <svg class="bookmark-svg" viewBox="0 0 24 24" width="16" height="16">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span class="saved-text">Kaydedilenler</span>
+            <span id="saved-count-badge" class="saved-count-badge">0</span>
+          </button>
         </div>
 
         <section class="panel active" id="panel-home">
@@ -91,6 +99,10 @@
         <section class="panel" id="panel-performans">
           <button class="add-btn" data-cat="performans">+ İçerik Ekle</button>
           <div class="entries-list" id="performans-entries"></div>
+        </section>
+
+        <section class="panel" id="panel-saved">
+          <div class="entries-list" id="saved-entries"></div>
         </section>
 
       </main>
@@ -164,6 +176,17 @@
     <div class="modal-box modal-wide">
       <button class="modal-close" id="close-view-modal">✕</button>
       <div id="view-body"></div>
+
+      <!-- Yorumlar Bölümü -->
+      <div id="view-comments-section" class="view-comments-section">
+        <div class="comments-header">Yorumlar</div>
+        <div id="comments-list" class="comments-list"></div>
+        <div class="comment-input-wrap">
+          <textarea id="comment-input" placeholder="Bir yorum bırak…" rows="2" maxlength="500"></textarea>
+          <button type="button" id="submit-comment-btn" class="comment-submit-btn">Gönder</button>
+        </div>
+      </div>
+
       <div class="view-actions" id="view-actions"></div>
     </div>
   </div>
@@ -200,7 +223,7 @@
     </div>
   </div>
 
-  <!-- ============================== MODAL: GENEL DUYURU ============================== -->
+  <!-- MODAL: GENEL DUYURU -->
   <div class="modal-overlay hidden" id="notice-modal">
     <div class="modal-box" style="max-width: 480px; text-align: center;">
       <h2 class="modal-title" style="margin-bottom: 20px;">Duyuru</h2>
@@ -211,7 +234,7 @@
     </div>
   </div>
 
-  <!-- ============================== MODAL: YAZAR ŞİFRESİ İŞLEMİ ============================== -->
+  <!-- MODAL: YAZAR ŞİFRESİ İŞLEMİ -->
   <div class="modal-overlay hidden" id="author-auth-modal">
     <div class="modal-box" style="max-width: 460px;">
       <button class="modal-close" id="close-author-auth-modal">✕</button>
@@ -223,7 +246,6 @@
         <input type="password" id="author-auth-pass" placeholder="Şifrenizi girin…" />
       </div>
 
-      <!-- Bilgilendirme Kutusu (Yeni şifre belirlendiğinde görünür) -->
       <div id="author-auth-info-box" class="hidden" style="margin-bottom: 22px; padding: 14px 16px; border: 1px solid #444; background: #0c0c0c;">
         <p style="font-size: 0.88rem; color: #e0e0e0; line-height: 1.6;">
           Eğer bu girdiğin şifreyi unutursan <span style="color:#fff; text-decoration:underline;">groteskwebcontact@gmail.com</span> adresi ile iletişime geçebilirsin.
