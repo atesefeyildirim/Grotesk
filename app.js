@@ -15,10 +15,7 @@ import {
   increment
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { 
-  getStorage, 
-  ref, 
-  uploadBytes, 
-  getDownloadURL 
+  getStorage
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 // Firebase Yapılandırması
@@ -37,15 +34,12 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 
 const COLLECTION_NAME = "grotesk_entries";
-const STORAGE_FOLDER = "grotesk_uploads";
 const AUTHORS_COLLECTION = "authors";
 
 /* ===================================================
    GÜVENLİK & ŞİFRE (SHA-256 HASH)
-   Inspect yapıldığında şifre kaynak kodda görünmez.
    =================================================== */
 const AUTH_HASH = "9d06ac0aeaba527e1e3684820ea7c172f9d6ef645d0d8a249dfbd1ef4c8236ba";
-// Master Kurtarma Şifresi (61728394452680) SHA-256 Hash Karşılığı
 const MASTER_RECOVERY_HASH = "b78eb25bf79fe1fa258a7125da03a9a1ad2fc5480171d6d2be89101b897833c6";
 
 async function sha256(str) {
@@ -54,8 +48,7 @@ async function sha256(str) {
 }
 
 /* ===================================================
-   KADEMELİ BEKLEME (BRUTE FORCE KORUMASI)
-   5 yanlış: 5 dk -> 5 yanlış daha: 15 dk -> sonraki her 5 yanlışta: 30 dk
+   BRUTE FORCE KORUMASI
    =================================================== */
 let lockState = {
   failedCount: 0,
@@ -137,11 +130,9 @@ if (currentRole) {
   showMainSite(currentRole);
 }
 
-// Yazar Girişi (Şifreli)
 if (loginForm) {
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-
     if (checkLockStatus()) return;
 
     const pass = loginPass?.value || "";
@@ -153,7 +144,6 @@ if (loginForm) {
     const hash = await sha256(pass);
 
     if (hash === AUTH_HASH) {
-      // Başarılı giriş - Kilit durumunu sıfırla
       lockState.failedCount = 0;
       lockState.penaltyLevel = 0;
       lockState.lockUntil = 0;
@@ -165,7 +155,6 @@ if (loginForm) {
       if (loginError) loginError.innerText = "";
       showMainSite(currentRole);
     } else {
-      // Hatalı giriş
       lockState.failedCount++;
       const left = 5 - lockState.failedCount;
 
@@ -173,7 +162,6 @@ if (loginForm) {
         lockState.failedCount = 0;
         lockState.penaltyLevel++;
 
-        // Kademeli ceza süresi
         let cooldownMinutes = 30;
         if (lockState.penaltyLevel === 1) cooldownMinutes = 5;
         else if (lockState.penaltyLevel === 2) cooldownMinutes = 15;
@@ -191,7 +179,6 @@ if (loginForm) {
   });
 }
 
-// Okuyucu Girişi (Şifresiz)
 if (btnReader) {
   btnReader.addEventListener("click", () => {
     currentRole = "reader";
@@ -202,7 +189,6 @@ if (btnReader) {
   });
 }
 
-// Çıkış Yap
 if (logoutBtn) {
   logoutBtn.addEventListener("click", () => {
     currentRole = "";
@@ -227,7 +213,7 @@ function showMainSite(role) {
 }
 
 /* ===================================================
-   1. GENEL DUYURU KUTUSU (NOTIFICATION BOX)
+   GENEL DUYURU KUTUSU
    =================================================== */
 const noticeModal = document.getElementById("notice-modal");
 const btnNoticeDismiss = document.getElementById("btn-notice-dismiss");
@@ -244,13 +230,10 @@ function checkNoticeModal() {
     noticeModal.classList.remove("hidden");
   }
 }
-
-// Sayfa ilk yüklendiğinde duyuru kontrolü
 checkNoticeModal();
 
 /* ===================================================
-   2., 3. & 4. KİŞİSEL YAZAR ŞİFRESİ, KİLİTLEME,
-   MASTER KURTARMA VE 5 DAKİKALIK COOLDOWN SİSTEMİ
+   YAZAR ŞİFRESİ VE DOĞRULAMA
    =================================================== */
 const authorAuthModal = document.getElementById("author-auth-modal");
 const closeAuthorAuthModal = document.getElementById("close-author-auth-modal");
@@ -286,12 +269,8 @@ function closeAuthorAuthModalFn() {
   }
 }
 
-if (closeAuthorAuthModal) {
-  closeAuthorAuthModal.addEventListener("click", closeAuthorAuthModalFn);
-}
-if (btnAuthorAuthCancel) {
-  btnAuthorAuthCancel.addEventListener("click", closeAuthorAuthModalFn);
-}
+if (closeAuthorAuthModal) closeAuthorAuthModal.addEventListener("click", closeAuthorAuthModalFn);
+if (btnAuthorAuthCancel) btnAuthorAuthCancel.addEventListener("click", closeAuthorAuthModalFn);
 if (authorAuthModal) {
   authorAuthModal.addEventListener("click", (e) => {
     if (e.target === authorAuthModal) closeAuthorAuthModalFn();
@@ -303,7 +282,6 @@ function authorizeAuthor(rawAuthorName) {
     const cleanName = (rawAuthorName || "").trim() || "Grotesk Yazarı";
     const authorKey = cleanName.toLowerCase();
 
-    // 1. Cooldown Kontrolü (5 kez üst üste hatalı girilirse 5 dakika kilit)
     const cd = getAuthorCooldown(authorKey);
     if (cd.lockUntil && Date.now() < cd.lockUntil) {
       const remainingSec = Math.ceil((cd.lockUntil - Date.now()) / 1000);
@@ -314,7 +292,6 @@ function authorizeAuthor(rawAuthorName) {
       return;
     }
 
-    // 2. Firestore authors koleksiyonundan kontrol
     const authorDocRef = doc(db, AUTHORS_COLLECTION, authorKey);
     let authorDocSnap;
     try {
@@ -332,14 +309,12 @@ function authorizeAuthor(rawAuthorName) {
 
     const isLocked = authorDocSnap.exists();
 
-    // Butonu klonlayarak eski dinleyicileri temizle
     let submitBtnEl = document.getElementById("btn-author-auth-submit");
     const freshBtn = submitBtnEl.cloneNode(true);
     submitBtnEl.replaceWith(freshBtn);
     submitBtnEl = freshBtn;
 
     if (!isLocked) {
-      /* SENARYO A: İsim kilitli DEĞİL */
       let chosenPassword = "";
       let step = 1;
 
@@ -362,7 +337,6 @@ function authorizeAuthor(rawAuthorName) {
           chosenPassword = pass;
           step = 2;
 
-          // Adım 2: Bilgilendirme Kutusu
           authorAuthTitle.innerText = "Önemli Bilgilendirme";
           authorAuthDesc.innerText = `'${cleanName}' ismi için şifreniz kaydedilmek üzere.`;
           authorAuthPassGroup.classList.add("hidden");
@@ -393,7 +367,6 @@ function authorizeAuthor(rawAuthorName) {
       });
 
     } else {
-      /* SENARYO B: İsim KİLİTLİ */
       authorAuthTitle.innerText = "Yazar Şifresi Doğrulama";
       authorAuthDesc.innerText = `'${cleanName}' ismi kişisel şifre ile kilitlenmiştir. Bu işlemi tamamlamak için şifrenizi girin:`;
       authorAuthPassGroup.classList.remove("hidden");
@@ -413,19 +386,17 @@ function authorizeAuthor(rawAuthorName) {
         const hash = await sha256(pass);
         const storedHash = authorDocSnap.data()?.passcodeHash;
 
-        // PasscodeHash VEYA MASTER_RECOVERY_HASH kontrolü
         if (hash === storedHash || hash === MASTER_RECOVERY_HASH) {
           saveAuthorCooldown(authorKey, { failedCount: 0, lockUntil: 0 });
           authorAuthModal.classList.add("hidden");
           activeAuthResolver = null;
           resolve(true);
         } else {
-          // Hatalı şifre
           const currentCd = getAuthorCooldown(authorKey);
           currentCd.failedCount = (currentCd.failedCount || 0) + 1;
 
           if (currentCd.failedCount >= 5) {
-            currentCd.lockUntil = Date.now() + 5 * 60 * 1000; // 5 dakika kilit
+            currentCd.lockUntil = Date.now() + 5 * 60 * 1000;
             currentCd.failedCount = 0;
             saveAuthorCooldown(authorKey, currentCd);
             authorAuthError.innerText = "Şifre üst üste 5 kez hatalı girildi! 5 dakika boyunca işlem yapılamaz.";
@@ -446,7 +417,7 @@ function authorizeAuthor(rawAuthorName) {
 }
 
 /* ===================================================
-   PANEL GEÇİŞLERİ
+   PANEL GEÇİŞLERİ VE KAYDEDİLENLER BUTONU
    =================================================== */
 const panelLinks = document.querySelectorAll(".panel-link");
 const panels = document.querySelectorAll(".panel");
@@ -465,6 +436,191 @@ panelLinks.forEach(link => {
   });
 });
 
+const savedToggleBtn = document.getElementById("saved-toggle-btn");
+if (savedToggleBtn) {
+  savedToggleBtn.addEventListener("click", () => {
+    panelLinks.forEach(l => {
+      if (l.dataset.panel === "saved") l.classList.add("active");
+      else l.classList.remove("active");
+    });
+    panels.forEach(p => p.classList.remove("active"));
+    const savedPanel = document.getElementById("panel-saved");
+    if (savedPanel) savedPanel.classList.add("active");
+  });
+}
+
+/* ===================================================
+   KAYDEDİLENLER (LOCAL STORAGE BOOKMARKS)
+   =================================================== */
+function getSavedPosts() {
+  try {
+    const raw = localStorage.getItem("grotesk_saved_posts");
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function isPostSaved(docId) {
+  return getSavedPosts().includes(docId);
+}
+
+function toggleSavePost(docId) {
+  let saved = getSavedPosts();
+  if (saved.includes(docId)) {
+    saved = saved.filter(id => id !== docId);
+  } else {
+    saved.push(docId);
+  }
+  localStorage.setItem("grotesk_saved_posts", JSON.stringify(saved));
+  updateSavedBadge();
+  renderAllEntries();
+}
+
+function updateSavedBadge() {
+  const badge = document.getElementById("saved-count-badge");
+  if (badge) {
+    badge.innerText = getSavedPosts().length;
+  }
+}
+
+/* ===================================================
+   TEKİL GÖRÜNTÜLENME VE BEĞENİ YÖNETİMİ
+   =================================================== */
+async function registerView(docId) {
+  const viewKey = 'viewed_' + docId;
+  if (!localStorage.getItem(viewKey)) {
+    try {
+      const docRef = doc(db, COLLECTION_NAME, docId);
+      await updateDoc(docRef, { views: increment(1) });
+      localStorage.setItem(viewKey, 'true');
+    } catch (err) {
+      console.error("Görüntülenme artırma hatası:", err);
+    }
+  }
+}
+
+async function toggleLike(docId) {
+  const likeKey = 'liked_' + docId;
+  const isLiked = !!localStorage.getItem(likeKey);
+  const docRef = doc(db, COLLECTION_NAME, docId);
+
+  try {
+    if (!isLiked) {
+      await updateDoc(docRef, { likes: increment(1) });
+      localStorage.setItem(likeKey, 'true');
+    } else {
+      await updateDoc(docRef, { likes: increment(-1) });
+      localStorage.removeItem(likeKey);
+    }
+  } catch (err) {
+    console.error("Beğeni işlemi hatası:", err);
+  }
+}
+
+/* ===================================================
+   ANONİM YORUM SİSTEMİ & SİLME YETKİSİ
+   =================================================== */
+let currentCommentUnsubscribe = null;
+
+function listenComments(postId) {
+  if (currentCommentUnsubscribe) {
+    currentCommentUnsubscribe();
+    currentCommentUnsubscribe = null;
+  }
+
+  const commentsListEl = document.getElementById("comments-list");
+  if (!commentsListEl) return;
+
+  const commentsRef = collection(db, COLLECTION_NAME, postId, "comments");
+  const q = query(commentsRef, orderBy("createdAt", "asc"));
+
+  currentCommentUnsubscribe = onSnapshot(q, (snapshot) => {
+    commentsListEl.innerHTML = "";
+    if (snapshot.empty) {
+      commentsListEl.innerHTML = '<div class="no-comments">— Henüz yorum yapılmamış —</div>';
+      return;
+    }
+
+    snapshot.forEach((commentDoc) => {
+      const commentData = commentDoc.data();
+      const commentId = commentDoc.id;
+
+      let dateStr = "";
+      if (commentData.createdAt && commentData.createdAt.seconds) {
+        dateStr = new Date(commentData.createdAt.seconds * 1000).toLocaleString("tr-TR", {
+          day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"
+        });
+      }
+
+      const item = document.createElement("div");
+      item.className = "comment-item";
+      item.innerHTML = `
+        <div class="comment-content">
+          <p class="comment-text">${escapeHtml(commentData.text || "")}</p>
+          ${dateStr ? `<span class="comment-date">${dateStr}</span>` : ""}
+        </div>
+        <button type="button" class="comment-delete-btn">Sil</button>
+      `;
+
+      item.querySelector(".comment-delete-btn").addEventListener("click", () => {
+        const entryData = allEntries.find(e => e.id === postId);
+        const entryAuthor = (entryData && (entryData.authorName || entryData.author)) || "Grotesk Yazarı";
+        deleteComment(postId, commentId, entryAuthor);
+      });
+
+      commentsListEl.appendChild(item);
+    });
+  }, (err) => {
+    console.error("Yorum dinleme hatası:", err);
+  });
+}
+
+async function addComment(postId) {
+  const inputEl = document.getElementById("comment-input");
+  if (!inputEl) return;
+  const text = inputEl.value.trim();
+  if (!text) return;
+
+  try {
+    const commentsRef = collection(db, COLLECTION_NAME, postId, "comments");
+    const docRef = await addDoc(commentsRef, {
+      text: text,
+      createdAt: serverTimestamp()
+    });
+    localStorage.setItem('my_comment_' + docRef.id, 'true');
+    inputEl.value = "";
+  } catch (err) {
+    console.error("Yorum ekleme hatası:", err);
+    alert("Yorum eklenirken hata oluştu: " + err.message);
+  }
+}
+
+async function deleteComment(postId, commentId, entryAuthorName) {
+  const isMyComment = localStorage.getItem('my_comment_' + commentId);
+
+  // A) Cihazda kayıt varsa şifresiz direkt siler
+  if (isMyComment) {
+    try {
+      await deleteDoc(doc(db, COLLECTION_NAME, postId, "comments", commentId));
+      localStorage.removeItem('my_comment_' + commentId);
+    } catch (err) {
+      console.error("Yorum silme hatası:", err);
+    }
+    return;
+  }
+
+  // B) Cihazda kayıt yoksa Yazar / Master şifresi doğrulaması ister
+  const isAuthorized = await authorizeAuthor(entryAuthorName);
+  if (isAuthorized) {
+    try {
+      await deleteDoc(doc(db, COLLECTION_NAME, postId, "comments", commentId));
+    } catch (err) {
+      console.error("Yorum silme hatası:", err);
+    }
+  }
+}
+
 /* ===================================================
    İÇERİK EKLEME MODALI & KATEGORİLER
    =================================================== */
@@ -477,7 +633,7 @@ let selectedCategory = "metinler";
 
 addBtns.forEach(btn => {
   btn.addEventListener("click", () => {
-    if (currentRole !== "author") return; // Sadece yazar ekleyebilir
+    if (currentRole !== "author") return;
     const cat = btn.dataset.cat || "metinler";
     setSelectedCategory(cat);
     if (addModal) addModal.classList.remove("hidden");
@@ -515,7 +671,6 @@ function setSelectedCategory(cat) {
   }
 }
 
-// Dosya seçimi önizleme
 const fileInput = document.getElementById("entry-file");
 const filePreview = document.getElementById("file-preview");
 
@@ -545,7 +700,6 @@ if (fileInput) {
   });
 }
 
-// Dosyayı Base64 metin koduna dönüştüren yardımcı fonksiyon
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -556,7 +710,7 @@ function fileToBase64(file) {
 }
 
 /* ===================================================
-   İÇERİK KAYDETME (FIRESTORE - BASE64 DESTEKLİ)
+   İÇERİK KAYDETME (FIRESTORE)
    =================================================== */
 const submitBtn = document.getElementById("submit-entry");
 const titleInput = document.getElementById("entry-title");
@@ -584,17 +738,13 @@ if (submitBtn) {
       return;
     }
 
-    // Dosya boyutu kontrolü (Firestore 1 MB doküman sınırı nedeniyle 800 KB kontrolü)
     if (file && file.size > 800 * 1024) {
       alert("Dosya boyutu çok büyük! Lütfen 800 KB'dan küçük bir görsel/PDF seçin.");
       return;
     }
 
-    // Kişisel Yazar Şifresi Doğrulama / Kilitleme Kontrolü
     const isAuthorized = await authorizeAuthor(authorName);
-    if (!isAuthorized) {
-      return;
-    }
+    if (!isAuthorized) return;
 
     submitBtn.disabled = true;
     submitBtn.innerText = "YÜKLENİYOR...";
@@ -603,7 +753,6 @@ if (submitBtn) {
       let fileData = "";
       let fileName = "";
 
-      // Eğer kullanıcı bir dosya (görsel/PDF) seçtiyse Base64'e dönüştür
       if (file) {
         fileData = await fileToBase64(file);
         fileName = file.name;
@@ -617,12 +766,13 @@ if (submitBtn) {
         isOwn: isOwn,
         isHidden: isHidden,
         fileData: fileData,
-        fileUrl: fileData, // Geriye dönük uyumluluk
+        fileUrl: fileData,
         fileName: fileName,
+        views: 0,
+        likes: 0,
         createdAt: serverTimestamp()
       });
 
-      // Temizleme
       if (titleInput) titleInput.value = "";
       if (commentInput) commentInput.value = "";
       if (authorInput) authorInput.value = "";
@@ -657,12 +807,12 @@ function listenEntries() {
       allEntries.push({ id: docSnap.id, ...docSnap.data() });
     });
     renderAllEntries();
+    updateSavedBadge();
   }, (err) => {
     console.error("Firestore Dinleme Hatası:", err);
   });
 }
 
-// Arama kutusu dinleme
 const searchInput = document.getElementById("search-input");
 if (searchInput) {
   searchInput.addEventListener("input", () => {
@@ -672,16 +822,16 @@ if (searchInput) {
 
 function renderAllEntries() {
   const searchTerm = searchInput?.value.trim().toLowerCase() || "";
-  const categories = ["home", "metinler", "muzik", "resim", "fotograf", "sinema", "performans"];
+  const categories = ["home", "metinler", "muzik", "resim", "fotograf", "sinema", "performans", "saved"];
 
-  // Konteynerları temizle
   categories.forEach(cat => {
     const el = document.getElementById(`${cat}-entries`);
     if (el) el.innerHTML = "";
   });
 
+  const savedIds = getSavedPosts();
+
   const filtered = allEntries.filter(item => {
-    // Gizli olanları okuyuculardan gizle
     if (item.isHidden && currentRole === "reader") return false;
 
     if (!searchTerm) return true;
@@ -696,32 +846,39 @@ function renderAllEntries() {
   categories.forEach(c => counts[c] = 0);
 
   filtered.forEach(item => {
-    // Kendi kategorisine ekle
     const targetCatContainer = document.getElementById(`${item.category}-entries`);
     if (targetCatContainer) {
       targetCatContainer.appendChild(createCard(item));
       counts[item.category] = (counts[item.category] || 0) + 1;
     }
 
-    // Anasayfaya ekle
     const homeContainer = document.getElementById("home-entries");
     if (homeContainer) {
       homeContainer.appendChild(createCard(item));
       counts["home"] = (counts["home"] || 0) + 1;
     }
+
+    if (savedIds.includes(item.id)) {
+      const savedContainer = document.getElementById("saved-entries");
+      if (savedContainer) {
+        savedContainer.appendChild(createCard(item));
+        counts["saved"] = (counts["saved"] || 0) + 1;
+      }
+    }
   });
 
-  // Boş durum mesajları
   categories.forEach(cat => {
     const el = document.getElementById(`${cat}-entries`);
     if (el && counts[cat] === 0) {
-      el.innerHTML = '<div class="empty">— Henüz içerik yok —</div>';
+      el.innerHTML = cat === "saved" 
+        ? '<div class="empty">— Henüz kaydedilmiş bir içerik yok —</div>' 
+        : '<div class="empty">— Henüz içerik yok —</div>';
     }
   });
 }
 
 /* ===================================================
-   KART OLUŞTURMA (40 KARAKTER SINIRI)
+   KART OLUŞTURMA
    =================================================== */
 function createCard(data) {
   const card = document.createElement("div");
@@ -744,7 +901,6 @@ function createCard(data) {
     mediaData.includes(".gif")
   );
 
-  // 40 Karakter Kısıtları
   const rawTitle = data.title || "Başlıksız";
   const displayTitle = rawTitle.length > 40 ? rawTitle.slice(0, 40) + "…" : rawTitle;
 
@@ -752,6 +908,11 @@ function createCard(data) {
   const displayComment = rawComment.length > 40 ? rawComment.slice(0, 40) + "…" : rawComment;
 
   const authorDisp = data.authorName || data.author || "Grotesk Yazarı";
+
+  const isLiked = !!localStorage.getItem('liked_' + data.id);
+  const isSaved = isPostSaved(data.id);
+  const viewsCount = data.views || 0;
+  const likesCount = data.likes || 0;
 
   card.innerHTML = `
     <div class="entry-thumb">
@@ -764,11 +925,43 @@ function createCard(data) {
       <div class="entry-title">${escapeHtml(displayTitle)}</div>
       <div class="entry-own">${escapeHtml(authorDisp)}</div>
       ${displayComment ? `<div class="entry-preview">${escapeHtml(displayComment)}</div>` : ''}
-      <div class="entry-date">${dateStr}</div>
+      <div class="entry-footer-row">
+        <span class="entry-date">${dateStr}</span>
+        <div class="entry-stats">
+          <span class="stat-views" title="Görüntülenme">👁 ${viewsCount}</span>
+          <button type="button" class="like-card-btn ${isLiked ? 'active' : ''}" title="Beğen">
+            <span class="heart-icon">${isLiked ? '♥' : '♡'}</span>
+            <span class="like-count">${likesCount}</span>
+          </button>
+          <button type="button" class="bookmark-card-btn ${isSaved ? 'active' : ''}" title="Kaydet">
+            <svg class="bookmark-svg" viewBox="0 0 24 24" width="15" height="15">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   `;
 
-  // Sadece yazar ise aksiyon butonları
+  // Beğeni Butonu
+  const likeBtn = card.querySelector(".like-card-btn");
+  if (likeBtn) {
+    likeBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await toggleLike(data.id);
+    });
+  }
+
+  // Kaydet Butonu
+  const bookBtn = card.querySelector(".bookmark-card-btn");
+  if (bookBtn) {
+    bookBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleSavePost(data.id);
+    });
+  }
+
+  // Yazar Yetki Butonları
   if (currentRole === "author") {
     const acts = document.createElement("div");
     acts.className = "entry-actions";
@@ -783,8 +976,14 @@ function createCard(data) {
       openEditModal(data);
     });
 
+    // "Gizle" / "Göster" butonu için ŞİFRE KORUMASI
     acts.querySelector('[data-act="hide"]').addEventListener("click", async (e) => {
       e.stopPropagation();
+      const targetAuthor = data.authorName || data.author || "Grotesk Yazarı";
+      
+      const isAuthorized = await authorizeAuthor(targetAuthor);
+      if (!isAuthorized) return;
+
       try {
         await updateDoc(doc(db, COLLECTION_NAME, data.id), { isHidden: !data.isHidden });
       } catch (err) {
@@ -816,13 +1015,13 @@ function createCard(data) {
 }
 
 /* ===================================================
-   DETAY / OKUMA MODALI (KÜÇÜK OKUMA KISMI)
-   Sağ alt köşede kutu (box) içinde yazar adı gösterilir.
+   DETAY / OKUMA MODALI & YORUMLAR
    =================================================== */
 const viewModal = document.getElementById("view-modal");
 const closeViewModalBtn = document.getElementById("close-view-modal");
 const viewBody = document.getElementById("view-body");
 const viewActions = document.getElementById("view-actions");
+const submitCommentBtn = document.getElementById("submit-comment-btn");
 
 if (closeViewModalBtn) {
   closeViewModalBtn.addEventListener("click", () => {
@@ -838,6 +1037,8 @@ if (viewModal) {
 
 function openViewModal(data) {
   if (!viewBody || !viewModal) return;
+
+  registerView(data.id);
 
   const mediaData = data.fileData || data.fileUrl;
   const isImage = mediaData && (
@@ -870,7 +1071,6 @@ function openViewModal(data) {
     html += `<div class="view-text">${escapeHtml(data.comment)}</div>`;
   }
 
-  // En altta sağ köşede box içinde Grotesk Yazarı İsmi
   html += `
     <div class="view-author-box">
       <span class="author-lbl">Grotesk Yazarı:</span>
@@ -881,7 +1081,14 @@ function openViewModal(data) {
 
   viewBody.innerHTML = html;
 
-  // View modal butonları (Sadece Yazar Modunda)
+  listenComments(data.id);
+
+  if (submitCommentBtn) {
+    const newSubmitBtn = submitCommentBtn.cloneNode(true);
+    submitCommentBtn.replaceWith(newSubmitBtn);
+    newSubmitBtn.addEventListener("click", () => addComment(data.id));
+  }
+
   if (viewActions) {
     viewActions.innerHTML = "";
     if (currentRole === "author") {
@@ -928,6 +1135,7 @@ const editModal = document.getElementById("edit-modal");
 const closeEditModalBtn = document.getElementById("close-edit-modal");
 const submitEditBtn = document.getElementById("submit-edit");
 let currentEditingId = null;
+let currentEditingData = null;
 
 if (closeEditModalBtn) {
   closeEditModalBtn.addEventListener("click", () => {
@@ -940,8 +1148,6 @@ if (editModal) {
     if (e.target === editModal) editModal.classList.add("hidden");
   });
 }
-
-let currentEditingData = null;
 
 function openEditModal(data) {
   currentEditingData = data;
@@ -970,11 +1176,9 @@ if (submitEditBtn) {
     const originalAuthor = (currentEditingData && (currentEditingData.authorName || currentEditingData.author)) || "Grotesk Yazarı";
     const editAuthor = document.getElementById("edit-author")?.value.trim() || originalAuthor;
 
-    // Orijinal yazar şifresi doğrulaması
     const isAuthorized = await authorizeAuthor(originalAuthor);
     if (!isAuthorized) return;
 
-    // Yazar ismi değiştirildiyse, yeni yazar ismini de doğrula / kilitle
     if (editAuthor.toLowerCase() !== originalAuthor.toLowerCase()) {
       const isNewAuthorized = await authorizeAuthor(editAuthor);
       if (!isNewAuthorized) return;
@@ -1023,4 +1227,5 @@ function escapeHtml(str) {
 
 document.addEventListener("DOMContentLoaded", () => {
   listenEntries();
+  updateSavedBadge();
 });
