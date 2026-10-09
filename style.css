@@ -322,6 +322,7 @@ a { text-decoration: none; }
 .mf-sub { text-transform: none; color: #888; font-size: 0.68rem; letter-spacing: 0.04em; margin-left: 6px; }
 
 .mf input[type="text"],
+.mf input[type="password"],
 .mf textarea {
   width: 100%; background: transparent; border: none;
   border-bottom: 1px solid #555; color: var(--acc);
@@ -355,6 +356,11 @@ a { text-decoration: none; }
 .file-preview { margin-top: 12px; }
 .file-preview img { max-width: 140px; max-height: 140px; object-fit: cover; border: 1px solid #333; }
 .file-preview .fname { font-size: 0.8rem; color: #999; letter-spacing: 0.06em; word-break: break-all; }
+.remove-file-btn:hover {
+  border-color: #ff5555 !important;
+  color: #fff !important;
+  background: rgba(255, 85, 85, 0.2) !important;
+}
 
 .cb-label {
   display: flex; align-items: center; gap: 10px;
