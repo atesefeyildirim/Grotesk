@@ -200,6 +200,45 @@
     </div>
   </div>
 
+  <!-- ============================== MODAL: GENEL DUYURU ============================== -->
+  <div class="modal-overlay hidden" id="notice-modal">
+    <div class="modal-box" style="max-width: 480px; text-align: center;">
+      <h2 class="modal-title" style="margin-bottom: 20px;">Duyuru</h2>
+      <p style="font-size: 0.98rem; color: #d0d0d0; line-height: 1.8; margin-bottom: 28px;">
+        Grotesk kişisel yazar şifresi sistemine geçti. Sitede daha önce kullanılan veya yeni kullanılacak yazar isimleri ilk işlemde kişisel şifre ile kilitlenmektedir. İçeriklerinizi korumak için isminizi kilitlerken belirlediğiniz şifreyi unutmayınız.
+      </p>
+      <button type="button" class="submit-btn" id="btn-notice-dismiss" style="margin-top: 0;">Anladım</button>
+    </div>
+  </div>
+
+  <!-- ============================== MODAL: YAZAR ŞİFRESİ İŞLEMİ ============================== -->
+  <div class="modal-overlay hidden" id="author-auth-modal">
+    <div class="modal-box" style="max-width: 460px;">
+      <button class="modal-close" id="close-author-auth-modal">✕</button>
+      <h2 class="modal-title" id="author-auth-title">Yazar Şifresi</h2>
+      <p id="author-auth-desc" style="font-size: 0.92rem; color: #ccc; line-height: 1.6; margin-bottom: 20px;"></p>
+
+      <div class="mf" id="author-auth-pass-group">
+        <label id="author-auth-pass-label">Şifre</label>
+        <input type="password" id="author-auth-pass" placeholder="Şifrenizi girin…" />
+      </div>
+
+      <!-- Bilgilendirme Kutusu (Yeni şifre belirlendiğinde görünür) -->
+      <div id="author-auth-info-box" class="hidden" style="margin-bottom: 22px; padding: 14px 16px; border: 1px solid #444; background: #0c0c0c;">
+        <p style="font-size: 0.88rem; color: #e0e0e0; line-height: 1.6;">
+          Eğer bu girdiğin şifreyi unutursan <span style="color:#fff; text-decoration:underline;">groteskwebcontact@gmail.com</span> adresi ile iletişime geçebilirsin.
+        </p>
+      </div>
+
+      <p id="author-auth-error" style="color: #ff6b6b; font-size: 0.84rem; min-height: 18px; margin-bottom: 12px; line-height: 1.4;"></p>
+
+      <div style="display: flex; gap: 10px;">
+        <button type="button" class="submit-btn" id="btn-author-auth-submit" style="flex: 1;">Onayla</button>
+        <button type="button" class="submit-btn" id="btn-author-auth-cancel" style="flex: 1; border-color: #444; color: #888;">İptal</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>
