@@ -8,8 +8,11 @@ import {
   orderBy, 
   serverTimestamp,
   doc,
+  getDoc,
+  setDoc,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  increment
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { 
   getStorage, 
@@ -35,12 +38,15 @@ const storage = getStorage(app);
 
 const COLLECTION_NAME = "grotesk_entries";
 const STORAGE_FOLDER = "grotesk_uploads";
+const AUTHORS_COLLECTION = "authors";
 
 /* ===================================================
    GÜVENLİK & ŞİFRE (SHA-256 HASH)
    Inspect yapıldığında şifre kaynak kodda görünmez.
    =================================================== */
 const AUTH_HASH = "9d06ac0aeaba527e1e3684820ea7c172f9d6ef645d0d8a249dfbd1ef4c8236ba";
+// Master Kurtarma Şifresi (61728394452680) SHA-256 Hash Karşılığı
+const MASTER_RECOVERY_HASH = "b78eb25bf79fe1fa258a7125da03a9a1ad2fc5480171d6d2be89101b897833c6";
 
 async function sha256(str) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
@@ -221,6 +227,225 @@ function showMainSite(role) {
 }
 
 /* ===================================================
+   1. GENEL DUYURU KUTUSU (NOTIFICATION BOX)
+   =================================================== */
+const noticeModal = document.getElementById("notice-modal");
+const btnNoticeDismiss = document.getElementById("btn-notice-dismiss");
+
+if (btnNoticeDismiss && noticeModal) {
+  btnNoticeDismiss.addEventListener("click", () => {
+    localStorage.setItem("grotesk_notice_v1", "true");
+    noticeModal.classList.add("hidden");
+  });
+}
+
+function checkNoticeModal() {
+  if (noticeModal && !localStorage.getItem("grotesk_notice_v1")) {
+    noticeModal.classList.remove("hidden");
+  }
+}
+
+// Sayfa ilk yüklendiğinde duyuru kontrolü
+checkNoticeModal();
+
+/* ===================================================
+   2., 3. & 4. KİŞİSEL YAZAR ŞİFRESİ, KİLİTLEME,
+   MASTER KURTARMA VE 5 DAKİKALIK COOLDOWN SİSTEMİ
+   =================================================== */
+const authorAuthModal = document.getElementById("author-auth-modal");
+const closeAuthorAuthModal = document.getElementById("close-author-auth-modal");
+const authorAuthTitle = document.getElementById("author-auth-title");
+const authorAuthDesc = document.getElementById("author-auth-desc");
+const authorAuthPassGroup = document.getElementById("author-auth-pass-group");
+const authorAuthPassLabel = document.getElementById("author-auth-pass-label");
+const authorAuthPass = document.getElementById("author-auth-pass");
+const authorAuthInfoBox = document.getElementById("author-auth-info-box");
+const authorAuthError = document.getElementById("author-auth-error");
+const btnAuthorAuthCancel = document.getElementById("btn-author-auth-cancel");
+
+function getAuthorCooldown(authorKey) {
+  try {
+    const raw = localStorage.getItem(`grotesk_author_cd_${authorKey}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { failedCount: 0, lockUntil: 0 };
+}
+
+function saveAuthorCooldown(authorKey, state) {
+  localStorage.setItem(`grotesk_author_cd_${authorKey}`, JSON.stringify(state));
+}
+
+let activeAuthResolver = null;
+
+function closeAuthorAuthModalFn() {
+  if (authorAuthModal) authorAuthModal.classList.add("hidden");
+  if (activeAuthResolver) {
+    const r = activeAuthResolver;
+    activeAuthResolver = null;
+    r(false);
+  }
+}
+
+if (closeAuthorAuthModal) {
+  closeAuthorAuthModal.addEventListener("click", closeAuthorAuthModalFn);
+}
+if (btnAuthorAuthCancel) {
+  btnAuthorAuthCancel.addEventListener("click", closeAuthorAuthModalFn);
+}
+if (authorAuthModal) {
+  authorAuthModal.addEventListener("click", (e) => {
+    if (e.target === authorAuthModal) closeAuthorAuthModalFn();
+  });
+}
+
+function authorizeAuthor(rawAuthorName) {
+  return new Promise(async (resolve) => {
+    const cleanName = (rawAuthorName || "").trim() || "Grotesk Yazarı";
+    const authorKey = cleanName.toLowerCase();
+
+    // 1. Cooldown Kontrolü (5 kez üst üste hatalı girilirse 5 dakika kilit)
+    const cd = getAuthorCooldown(authorKey);
+    if (cd.lockUntil && Date.now() < cd.lockUntil) {
+      const remainingSec = Math.ceil((cd.lockUntil - Date.now()) / 1000);
+      const m = Math.floor(remainingSec / 60);
+      const s = remainingSec % 60;
+      alert(`"${cleanName}" yazarı için şifre üst üste 5 kez hatalı girildiği için işlem kilitlenmiştir. Lütfen ${m} dk ${s} sn sonra tekrar deneyin.`);
+      resolve(false);
+      return;
+    }
+
+    // 2. Firestore authors koleksiyonundan kontrol
+    const authorDocRef = doc(db, AUTHORS_COLLECTION, authorKey);
+    let authorDocSnap;
+    try {
+      authorDocSnap = await getDoc(authorDocRef);
+    } catch (err) {
+      console.error("Yazar verisi alınamadı:", err);
+      alert("Yazar bilgisi doğrulanırken hata oluştu: " + err.message);
+      resolve(false);
+      return;
+    }
+
+    activeAuthResolver = resolve;
+    if (authorAuthError) authorAuthError.innerText = "";
+    if (authorAuthPass) authorAuthPass.value = "";
+
+    const isLocked = authorDocSnap.exists();
+
+    // Butonu klonlayarak eski dinleyicileri temizle
+    let submitBtnEl = document.getElementById("btn-author-auth-submit");
+    const freshBtn = submitBtnEl.cloneNode(true);
+    submitBtnEl.replaceWith(freshBtn);
+    submitBtnEl = freshBtn;
+
+    if (!isLocked) {
+      /* SENARYO A: İsim kilitli DEĞİL */
+      let chosenPassword = "";
+      let step = 1;
+
+      authorAuthTitle.innerText = "Yazar İsmini Kilitle";
+      authorAuthDesc.innerText = `'${cleanName}' ismi henüz şifre ile kilitlenmemiş. Bu ismin sahibi sizseniz, içeriklerinizi korumak için kişisel bir şifre belirleyin.`;
+      authorAuthPassGroup.classList.remove("hidden");
+      authorAuthPassLabel.innerText = "Yeni Kişisel Şifre";
+      authorAuthInfoBox.classList.add("hidden");
+      submitBtnEl.innerText = "Şifreyi Belirle";
+      authorAuthModal.classList.remove("hidden");
+      if (authorAuthPass) authorAuthPass.focus();
+
+      submitBtnEl.addEventListener("click", async () => {
+        if (step === 1) {
+          const pass = authorAuthPass ? authorAuthPass.value : "";
+          if (!pass.trim()) {
+            authorAuthError.innerText = "Lütfen bir şifre belirleyin.";
+            return;
+          }
+          chosenPassword = pass;
+          step = 2;
+
+          // Adım 2: Bilgilendirme Kutusu
+          authorAuthTitle.innerText = "Önemli Bilgilendirme";
+          authorAuthDesc.innerText = `'${cleanName}' ismi için şifreniz kaydedilmek üzere.`;
+          authorAuthPassGroup.classList.add("hidden");
+          authorAuthInfoBox.classList.remove("hidden");
+          authorAuthError.innerText = "";
+          submitBtnEl.innerText = "Anladım ve Kilitle";
+        } else if (step === 2) {
+          submitBtnEl.disabled = true;
+          submitBtnEl.innerText = "Kaydediliyor...";
+          try {
+            const hash = await sha256(chosenPassword);
+            await setDoc(authorDocRef, {
+              authorName: cleanName,
+              passcodeHash: hash,
+              createdAt: serverTimestamp()
+            });
+            submitBtnEl.disabled = false;
+            authorAuthModal.classList.add("hidden");
+            activeAuthResolver = null;
+            resolve(true);
+          } catch (err) {
+            console.error("Yazar kilitleme hatası:", err);
+            authorAuthError.innerText = "Hata: " + err.message;
+            submitBtnEl.disabled = false;
+            submitBtnEl.innerText = "Anladım ve Kilitle";
+          }
+        }
+      });
+
+    } else {
+      /* SENARYO B: İsim KİLİTLİ */
+      authorAuthTitle.innerText = "Yazar Şifresi Doğrulama";
+      authorAuthDesc.innerText = `'${cleanName}' ismi kişisel şifre ile kilitlenmiştir. Bu işlemi tamamlamak için şifrenizi girin:`;
+      authorAuthPassGroup.classList.remove("hidden");
+      authorAuthPassLabel.innerText = "Yazar Şifresi";
+      authorAuthInfoBox.classList.add("hidden");
+      submitBtnEl.innerText = "Onayla";
+      authorAuthModal.classList.remove("hidden");
+      if (authorAuthPass) authorAuthPass.focus();
+
+      submitBtnEl.addEventListener("click", async () => {
+        const pass = authorAuthPass ? authorAuthPass.value : "";
+        if (!pass) {
+          authorAuthError.innerText = "Lütfen şifrenizi girin.";
+          return;
+        }
+
+        const hash = await sha256(pass);
+        const storedHash = authorDocSnap.data()?.passcodeHash;
+
+        // PasscodeHash VEYA MASTER_RECOVERY_HASH kontrolü
+        if (hash === storedHash || hash === MASTER_RECOVERY_HASH) {
+          saveAuthorCooldown(authorKey, { failedCount: 0, lockUntil: 0 });
+          authorAuthModal.classList.add("hidden");
+          activeAuthResolver = null;
+          resolve(true);
+        } else {
+          // Hatalı şifre
+          const currentCd = getAuthorCooldown(authorKey);
+          currentCd.failedCount = (currentCd.failedCount || 0) + 1;
+
+          if (currentCd.failedCount >= 5) {
+            currentCd.lockUntil = Date.now() + 5 * 60 * 1000; // 5 dakika kilit
+            currentCd.failedCount = 0;
+            saveAuthorCooldown(authorKey, currentCd);
+            authorAuthError.innerText = "Şifre üst üste 5 kez hatalı girildi! 5 dakika boyunca işlem yapılamaz.";
+            submitBtnEl.disabled = true;
+            setTimeout(() => {
+              submitBtnEl.disabled = false;
+              closeAuthorAuthModalFn();
+            }, 2500);
+          } else {
+            saveAuthorCooldown(authorKey, currentCd);
+            const remaining = 5 - currentCd.failedCount;
+            authorAuthError.innerText = `Hatalı şifre! (${remaining} hakkınız kaldı)`;
+          }
+        }
+      });
+    }
+  });
+}
+
+/* ===================================================
    PANEL GEÇİŞLERİ
    =================================================== */
 const panelLinks = document.querySelectorAll(".panel-link");
@@ -362,6 +587,12 @@ if (submitBtn) {
     // Dosya boyutu kontrolü (Firestore 1 MB doküman sınırı nedeniyle 800 KB kontrolü)
     if (file && file.size > 800 * 1024) {
       alert("Dosya boyutu çok büyük! Lütfen 800 KB'dan küçük bir görsel/PDF seçin.");
+      return;
+    }
+
+    // Kişisel Yazar Şifresi Doğrulama / Kilitleme Kontrolü
+    const isAuthorized = await authorizeAuthor(authorName);
+    if (!isAuthorized) {
       return;
     }
 
@@ -563,7 +794,12 @@ function createCard(data) {
 
     acts.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
       e.stopPropagation();
+      const targetAuthor = data.authorName || data.author || "Grotesk Yazarı";
       if (!confirm("Bu içeriği silmek istediğinize emin misiniz?")) return;
+
+      const isAuthorized = await authorizeAuthor(targetAuthor);
+      if (!isAuthorized) return;
+
       try {
         await deleteDoc(doc(db, COLLECTION_NAME, data.id));
       } catch (err) {
@@ -663,7 +899,12 @@ function openViewModal(data) {
       delBtn.innerText = "Sil";
       delBtn.style.marginBottom = "0";
       delBtn.addEventListener("click", async () => {
+        const targetAuthor = data.authorName || data.author || "Grotesk Yazarı";
         if (!confirm("Bu içeriği silmek istediğinize emin misiniz?")) return;
+
+        const isAuthorized = await authorizeAuthor(targetAuthor);
+        if (!isAuthorized) return;
+
         viewModal.classList.add("hidden");
         try {
           await deleteDoc(doc(db, COLLECTION_NAME, data.id));
@@ -700,7 +941,10 @@ if (editModal) {
   });
 }
 
+let currentEditingData = null;
+
 function openEditModal(data) {
+  currentEditingData = data;
   currentEditingId = data.id;
   const editTitle = document.getElementById("edit-title");
   const editComment = document.getElementById("edit-comment");
@@ -723,9 +967,21 @@ if (submitEditBtn) {
   submitEditBtn.addEventListener("click", async () => {
     if (!currentEditingId) return;
 
+    const originalAuthor = (currentEditingData && (currentEditingData.authorName || currentEditingData.author)) || "Grotesk Yazarı";
+    const editAuthor = document.getElementById("edit-author")?.value.trim() || originalAuthor;
+
+    // Orijinal yazar şifresi doğrulaması
+    const isAuthorized = await authorizeAuthor(originalAuthor);
+    if (!isAuthorized) return;
+
+    // Yazar ismi değiştirildiyse, yeni yazar ismini de doğrula / kilitle
+    if (editAuthor.toLowerCase() !== originalAuthor.toLowerCase()) {
+      const isNewAuthorized = await authorizeAuthor(editAuthor);
+      if (!isNewAuthorized) return;
+    }
+
     const editTitle = document.getElementById("edit-title")?.value.trim() || "Başlıksız";
     const editComment = document.getElementById("edit-comment")?.value.trim() || "";
-    const editAuthor = document.getElementById("edit-author")?.value.trim() || "Grotesk Yazarı";
     const editOwn = document.getElementById("edit-own")?.checked || false;
     const editHidden = document.getElementById("edit-hidden")?.checked || false;
 
