@@ -1,3 +1,4 @@
+URL: https://qrotesk.com/
 Grotesk
 Grotesk, Vanilla HTML, CSS, JavaScript ve Firebase altyapısıyla geliştirilmiş minimalist ve koyu tema odaklı bir kişisel yazar ve içerik platformudur.
 
