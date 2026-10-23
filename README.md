@@ -1,14 +1,14 @@
 URL: https://qrotesk.com/
-Grotesk
-Grotesk, Vanilla HTML, CSS, JavaScript ve Firebase altyapısıyla geliştirilmiş minimalist ve koyu tema odaklı bir kişisel yazar ve içerik platformudur.
 
-Temel Özellikler
-Rol Tabanlı Erişim: Şifresiz okuyucu modu ve SHA-256 şifrelemeyle korunan yazar modu ayrımı.
+Grotesk Grotesk is a minimalist, dark-mode-focused personal writer and content platform developed using Vanilla HTML, CSS, JavaScript, and Firebase architecture.
 
-Güvenli Yazar Yönetimi: Yazar isimlerinin kişisel şifrelerle kilitlenmesi ve brute-force koruması.
+Key Features
+Role-Based Access: Clear separation between a password-free reader mode and an author mode protected by SHA-256 encryption.
 
-Etkileşim Sistemleri: Tekil görüntülenme sayacı, minimalist beyaz kalp beğenileri ve anonim yorum akışı.
+Secure Author Management: Author names locked with personal passwords, featuring built-in brute-force protection.
 
-Yerel Kaydedilenler: Cihaz hafızasında (localStorage) saklanan favoriler ve arama çubuğunun yanındaki minimalist ayraç ikonu.
+Interaction Systems: Unique view counter, minimalist white heart likes, and an anonymous comment stream.
 
-Şifreli Gizleme: İçeriklerin gizlilik durumunun yazar şifresi doğrulanarak değiştirilmesi.
+Local Bookmarks: Favorites stored locally in device memory (localStorage), accessible via a minimalist bookmark icon next to the search bar.
+
+Encrypted Hiding: Content privacy status can be toggled by verifying the author's password.
