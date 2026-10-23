@@ -9,6 +9,4 @@ Secure Author Management: Author names locked with personal passwords, featuring
 
 Interaction Systems: Unique view counter, minimalist white heart likes, and an anonymous comment stream.
 
-Local Bookmarks: Favorites stored locally in device memory (localStorage), accessible via a minimalist bookmark icon next to the search bar.
-
 Encrypted Hiding: Content privacy status can be toggled by verifying the author's password.
