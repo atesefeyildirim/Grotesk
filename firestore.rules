@@ -1,0 +1,131 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isAuthor(docData) {
+      return isAuthenticated() && (
+        docData.get('authorUid', '') == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // ===============================================================
+    // grotesk_entries Domain Validators
+    // ===============================================================
+
+    function isValidInitialEntry() {
+      let data = request.resource.data;
+      return isAuthenticated() &&
+             data.get('authorUid', '') == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 100 &&
+             data.category is string && data.category.size() >= 1 &&
+             data.isHidden is bool &&
+             data.views == 0 &&
+             data.likes == 0 &&
+             data.createdAt is timestamp;
+    }
+
+    // Public / Reader counter update (views and likes only)
+    function isValidMetricUpdate() {
+      let diff = request.resource.data.diff(resource.data);
+      let affected = diff.affectedKeys();
+
+      let isViewsOnly = affected.hasOnly(['views']) &&
+        request.resource.data.views is int &&
+        request.resource.data.views == resource.data.get('views', 0) + 1;
+
+      let isLikesOnly = affected.hasOnly(['likes']) &&
+        request.resource.data.likes is int &&
+        request.resource.data.likes >= 0 &&
+        (request.resource.data.likes == resource.data.get('likes', 0) + 1 ||
+         request.resource.data.likes == resource.data.get('likes', 0) - 1);
+
+      let isBoth = affected.hasOnly(['views', 'likes']) &&
+        request.resource.data.views is int &&
+        request.resource.data.views == resource.data.get('views', 0) + 1 &&
+        request.resource.data.likes is int &&
+        request.resource.data.likes >= 0 &&
+        (request.resource.data.likes == resource.data.get('likes', 0) + 1 ||
+         request.resource.data.likes == resource.data.get('likes', 0) - 1);
+
+      return isViewsOnly || isLikesOnly || isBoth;
+    }
+
+    // Author or Admin content update
+    function isValidContentUpdate() {
+      return isAuthenticated() &&
+             (isAuthor(resource.data) || isAdmin()) &&
+             request.resource.data.get('authorUid', '') == resource.data.get('authorUid', request.auth.uid) &&
+             (isAdmin() || (
+               request.resource.data.get('views', 0) == resource.data.get('views', 0) &&
+               request.resource.data.get('likes', 0) == resource.data.get('likes', 0)
+             ));
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // 1. ADMIN MANAGEMENT
+    match /admins/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow write: if false; // System bootstrap, Firebase Console, or Admin SDK only
+    }
+
+    // 2. GROTESK ENTRIES COLLECTION
+    match /grotesk_entries/{entryId} {
+      // Okuyucu modu (giriş yapmamış) sadece isHidden == false okur; yazarlar ve admin her şeyi okur
+      allow read: if resource.data.get('isHidden', false) == false || isAuthenticated();
+
+      allow create: if isValidInitialEntry();
+
+      allow update: if isValidMetricUpdate() || isValidContentUpdate();
+
+      allow delete: if isAuthor(resource.data);
+
+      // 3. COMMENTS SUBCOLLECTION
+      match /comments/{commentId} {
+        allow read: if get(/databases/$(database)/documents/grotesk_entries/$(entryId)).data.get('isHidden', false) == false || isAuthenticated();
+
+        allow create: if request.resource.data.text is string &&
+                         request.resource.data.text.size() > 0 &&
+                         request.resource.data.text.size() <= 500 &&
+                         request.resource.data.createdAt is timestamp;
+
+        allow update: if false;
+
+        allow delete: if isAuthenticated() && (
+          get(/databases/$(database)/documents/grotesk_entries/$(entryId)).data.get('authorUid', '') == request.auth.uid ||
+          isAdmin()
+        );
+      }
+    }
+
+    // 4. AUTHORS COLLECTION
+    match /authors/{authorKey} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() && (request.resource.data.get('authorUid', '') == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // 5. DEFAULT DENY
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
