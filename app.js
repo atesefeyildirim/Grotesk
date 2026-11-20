@@ -1,14 +1,25 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  createUserWithEmailAndPassword,
+  updateProfile
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { 
   getFirestore, 
   collection, 
   addDoc, 
   onSnapshot, 
   query, 
-  orderBy, 
+  where,
   serverTimestamp,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -18,7 +29,9 @@ import {
   getStorage
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
-// Firebase Yapılandırması
+/* ===================================================
+   FIREBASE YAPILANDIRMASI
+   =================================================== */
 const firebaseConfig = {
   apiKey: "AIzaSyDlPjfrhjpd5QlX9hNEJreH1D7OETGWFNU",
   authDomain: "grotesk-48280.firebaseapp.com",
@@ -30,174 +43,146 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
 const COLLECTION_NAME = "grotesk_entries";
 const AUTHORS_COLLECTION = "authors";
+const ADMINS_COLLECTION = "admins";
+const INTERNAL_DOMAIN = "grotesk.internal";
 
 /* ===================================================
-   GÜVENLİK & ŞİFRE (SHA-256 HASH)
+   YARDIMCI VE DÖNÜŞTÜRME FONKSİYONLARI
    =================================================== */
-const AUTH_HASH = "9d06ac0aeaba527e1e3684820ea7c172f9d6ef645d0d8a249dfbd1ef4c8236ba";
-const MASTER_RECOVERY_HASH = "b78eb25bf79fe1fa258a7125da03a9a1ad2fc5480171d6d2be89101b897833c6";
 
+/**
+ * Kullanıcı tarafından girilen nicki küçük harfe, Türkçe karakter
+ * eşleniklerine dönüştürür ve boşlukları temizler.
+ * Caps lock önemsiz hale gelir: 'KUZGUN' -> 'kuzgun'
+ */
+function normalizeAuthorKey(nick) {
+  if (!nick) return "";
+  let clean = nick.trim();
+  clean = clean
+    .replace(/İ/g, "i")
+    .replace(/I/g, "ı")
+    .toLowerCase()
+    .replace(/ı/g, "i")
+    .replace(/ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/ş/g, "s")
+    .replace(/ö/g, "o")
+    .replace(/ç/g, "c")
+    .replace(/[^a-z0-9]/g, "");
+  return clean;
+}
+
+/**
+ * Nick'ten Firebase Auth için dahili e-posta adresi üretir.
+ */
+function nickToInternalEmail(nick) {
+  const key = normalizeAuthorKey(nick);
+  return `${key}@${INTERNAL_DOMAIN}`;
+}
+
+/**
+ * Yazar isimlerini ekranda sade ve baş harfleri büyük (Title Case) formatta gösterir.
+ * Örn: "kuzgun" -> "Kuzgun", "ahmet yılmaz" -> "Ahmet Yılmaz"
+ */
+function toTitleCase(str) {
+  if (!str) return "";
+  return str
+    .trim()
+    .split(/\s+/)
+    .map(word => {
+      if (!word) return "";
+      return word.charAt(0).toLocaleUpperCase("tr-TR") + word.slice(1).toLocaleLowerCase("tr-TR");
+    })
+    .join(" ");
+}
+
+/**
+ * Eski sistemdeki SHA-256 hash kontrollerini yalnızca tek seferlik
+ * otomatik Auth geçişi (migration) sırasında doğrulamak için kullanılır.
+ */
 async function sha256(str) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-/* ===================================================
-   BRUTE FORCE KORUMASI
-   =================================================== */
-let lockState = {
-  failedCount: 0,
-  penaltyLevel: 0,
-  lockUntil: 0
-};
-
-try {
-  const saved = localStorage.getItem("grotesk_lock_state");
-  if (saved) lockState = Object.assign(lockState, JSON.parse(saved));
-} catch {
-  // varsayılan state
-}
-
-function saveLockState() {
-  localStorage.setItem("grotesk_lock_state", JSON.stringify(lockState));
-}
-
-let lockTimerInterval = null;
-
-function checkLockStatus() {
-  const now = Date.now();
-  const btnAuthor = document.getElementById("btn-author-login");
-  const loginError = document.getElementById("login-error");
-
-  if (lockState.lockUntil && now < lockState.lockUntil) {
-    if (btnAuthor) btnAuthor.disabled = true;
-
-    if (!lockTimerInterval) {
-      lockTimerInterval = setInterval(() => {
-        const remaining = Math.max(0, Math.ceil((lockState.lockUntil - Date.now()) / 1000));
-        if (remaining <= 0) {
-          clearInterval(lockTimerInterval);
-          lockTimerInterval = null;
-          lockState.lockUntil = 0;
-          saveLockState();
-          if (btnAuthor) btnAuthor.disabled = false;
-          if (loginError) loginError.innerText = "";
-        } else {
-          const m = Math.floor(remaining / 60);
-          const s = remaining % 60;
-          const timeStr = `${m}:${s < 10 ? '0' : ''}${s}`;
-          if (loginError) {
-            loginError.innerText = `Çok fazla hatalı deneme. Lütfen bekleyin: ${timeStr}`;
-          }
-        }
-      }, 1000);
-    }
-    return true;
-  } else {
-    if (lockTimerInterval) {
-      clearInterval(lockTimerInterval);
-      lockTimerInterval = null;
-    }
-    lockState.lockUntil = 0;
-    saveLockState();
-    if (btnAuthor) btnAuthor.disabled = false;
-    return false;
-  }
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 /* ===================================================
-   ROL VE GİRİŞ YÖNETİMİ
+   OTURUM & ROL YÖNETİMİ
    =================================================== */
 let currentRole = localStorage.getItem("grotesk_role") || "";
+let currentAuthorName = "";
+let currentAuthorKey = "";
+let isAdmin = false;
 
 const loginPage = document.getElementById("login-page");
 const mainSite = document.getElementById("main-site");
 const loginForm = document.getElementById("login-form");
+const loginNick = document.getElementById("login-nick");
 const loginPass = document.getElementById("login-pass");
 const loginError = document.getElementById("login-error");
+const btnAuthor = document.getElementById("btn-author-login");
 const btnReader = document.getElementById("btn-reader-login");
 const logoutBtn = document.getElementById("logout-btn");
 const roleBadge = document.getElementById("role-badge");
 
-checkLockStatus();
+// Firebase Auth Oturum Durumu Dinleyicisi
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    currentRole = "author";
+    localStorage.setItem("grotesk_role", "author");
 
-if (currentRole) {
-  showMainSite(currentRole);
-}
-
-if (loginForm) {
-  loginForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (checkLockStatus()) return;
-
-    const pass = loginPass?.value || "";
-    if (!pass) {
-      if (loginError) loginError.innerText = "Lütfen şifre girin.";
-      return;
+    currentAuthorKey = user.email ? user.email.replace(`@${INTERNAL_DOMAIN}`, "") : "";
+    
+    // Admin kontrolü (admins/{uid})
+    try {
+      const adminDoc = await getDoc(doc(db, ADMINS_COLLECTION, user.uid));
+      isAdmin = adminDoc.exists();
+    } catch {
+      isAdmin = false;
     }
 
-    const hash = await sha256(pass);
+    currentAuthorName = user.displayName ? toTitleCase(user.displayName) : toTitleCase(currentAuthorKey);
 
-    if (hash === AUTH_HASH) {
-      lockState.failedCount = 0;
-      lockState.penaltyLevel = 0;
-      lockState.lockUntil = 0;
-      saveLockState();
-
-      currentRole = "author";
-      localStorage.setItem("grotesk_role", currentRole);
-      if (loginPass) loginPass.value = "";
-      if (loginError) loginError.innerText = "";
-      showMainSite(currentRole);
+    showMainSite("author");
+    listenEntries();
+  } else {
+    // Auth oturumu yok; Okuyucu modu seçilmiş mi kontrol et
+    if (currentRole === "reader") {
+      isAdmin = false;
+      currentAuthorName = "";
+      currentAuthorKey = "";
+      showMainSite("reader");
+      listenEntries();
     } else {
-      lockState.failedCount++;
-      const left = 5 - lockState.failedCount;
-
-      if (lockState.failedCount >= 5) {
-        lockState.failedCount = 0;
-        lockState.penaltyLevel++;
-
-        let cooldownMinutes = 30;
-        if (lockState.penaltyLevel === 1) cooldownMinutes = 5;
-        else if (lockState.penaltyLevel === 2) cooldownMinutes = 15;
-
-        lockState.lockUntil = Date.now() + (cooldownMinutes * 60 * 1000);
-        saveLockState();
-        checkLockStatus();
-      } else {
-        saveLockState();
-        if (loginError) {
-          loginError.innerText = `Hatalı şifre. (${left} hakkınız kaldı)`;
-        }
-      }
+      currentRole = "";
+      localStorage.removeItem("grotesk_role");
+      showLoginPage();
     }
-  });
-}
+  }
+});
 
-if (btnReader) {
-  btnReader.addEventListener("click", () => {
-    currentRole = "reader";
-    localStorage.setItem("grotesk_role", currentRole);
-    if (loginPass) loginPass.value = "";
-    if (loginError) loginError.innerText = "";
-    showMainSite(currentRole);
-  });
-}
-
-if (logoutBtn) {
-  logoutBtn.addEventListener("click", () => {
-    currentRole = "";
-    localStorage.removeItem("grotesk_role");
-    document.body.classList.remove("role-author", "role-reader");
-    if (mainSite) mainSite.classList.add("hidden");
-    if (loginPage) loginPage.classList.remove("hidden");
-    checkLockStatus();
-  });
+function showLoginPage() {
+  if (mainSite) mainSite.classList.add("hidden");
+  if (loginPage) loginPage.classList.remove("hidden");
+  document.body.classList.remove("role-author", "role-reader");
+  if (loginNick) loginNick.value = "";
+  if (loginPass) loginPass.value = "";
+  if (loginError) loginError.innerText = "";
 }
 
 function showMainSite(role) {
@@ -208,59 +193,203 @@ function showMainSite(role) {
   document.body.classList.add(`role-${role}`);
 
   if (roleBadge) {
-    roleBadge.innerText = role === "author" ? "Yazar Modu" : "Okuyucu Modu";
+    if (role === "author") {
+      const roleText = isAdmin ? "Yönetici" : "Yazar Modu";
+      roleBadge.innerText = `${currentAuthorName || 'Yazar'} • ${roleText}`;
+    } else {
+      roleBadge.innerText = "Okuyucu Modu";
+    }
   }
 }
 
 /* ===================================================
-   GENEL DUYURU KUTUSU
+   GİRİŞ VE ÇIKIŞ İŞLEMLERİ
+   =================================================== */
+
+// Yazar Girişi Formu
+if (loginForm) {
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (loginError) loginError.innerText = "";
+
+    const nick = loginNick?.value.trim() || "";
+    const pass = loginPass?.value || "";
+
+    if (!nick) {
+      if (loginError) loginError.innerText = "Lütfen yazar isminizi girin.";
+      if (loginNick) loginNick.focus();
+      return;
+    }
+
+    if (!pass) {
+      if (loginError) loginError.innerText = "Lütfen şifrenizi girin.";
+      if (loginPass) loginPass.focus();
+      return;
+    }
+
+    const email = nickToInternalEmail(nick);
+    const authorKey = normalizeAuthorKey(nick);
+
+    if (btnAuthor) {
+      btnAuthor.disabled = true;
+      btnAuthor.innerText = "Giriş Yapılıyor...";
+    }
+
+    try {
+      // 1) Standart Firebase Auth Giriş Denemesi
+      await signInWithEmailAndPassword(auth, email, pass);
+      if (loginPass) loginPass.value = "";
+      if (loginNick) loginNick.value = "";
+    } catch (err) {
+      console.warn("Auth girişi başarısız, eski sistem aktarım kontrolü yapılıyor:", err.code);
+
+      // 2) Eğer kullanıcı Auth'ta henüz yoksa ve eski Firestore 'authors' kaydı varsa otomatik aktar
+      let migrated = false;
+      try {
+        const authorDocSnap = await getDoc(doc(db, AUTHORS_COLLECTION, authorKey));
+        if (authorDocSnap.exists()) {
+          const authorData = authorDocSnap.data();
+          const enteredHash = await sha256(pass);
+
+          // Eski şifre hash'i eşleşiyor mu?
+          if (authorData.passcodeHash === enteredHash) {
+            const dispName = toTitleCase(authorData.authorName || nick);
+            // Firebase Auth hesabı oluştur
+            const userCred = await createUserWithEmailAndPassword(auth, email, pass);
+            await updateProfile(userCred.user, { displayName: dispName });
+
+            // Firestore authors kaydını güncelle
+            await setDoc(doc(db, AUTHORS_COLLECTION, authorKey), {
+              authorUid: userCred.user.uid,
+              authorName: dispName,
+              authorKey: authorKey,
+              createdAt: authorData.createdAt || serverTimestamp(),
+              migratedAt: serverTimestamp()
+            }, { merge: true });
+
+            // Bu yazarın eski içeriklerine authorUid eşlemesi yap
+            linkOldEntriesToAuthorUid(authorKey, userCred.user.uid);
+
+            migrated = true;
+            if (loginPass) loginPass.value = "";
+            if (loginNick) loginNick.value = "";
+          }
+        }
+      } catch (migrationErr) {
+        console.error("Otomatik geçiş hatası:", migrationErr);
+      }
+
+      if (!migrated) {
+        if (loginError) {
+          if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+            loginError.innerText = "Hatalı şifre girdiniz.";
+          } else if (err.code === "auth/user-not-found") {
+            loginError.innerText = "Bu yazar ismi sistemde kayıtlı değil.";
+          } else if (err.code === "auth/too-many-requests") {
+            loginError.innerText = "Çok fazla başarısız deneme. Lütfen bir süre bekleyin.";
+          } else {
+            loginError.innerText = "Giriş yapılamadı: " + (err.message || "Bilinmeyen hata");
+          }
+        }
+      }
+    } finally {
+      if (btnAuthor) {
+        btnAuthor.disabled = false;
+        btnAuthor.innerText = "Yazar Girişi";
+      }
+    }
+  });
+}
+
+/**
+ * Yazarın daha önce paylaştığı içeriklere authorUid ve authorKey bağlar.
+ */
+async function linkOldEntriesToAuthorUid(authorKey, uid) {
+  try {
+    const q = query(collection(db, COLLECTION_NAME));
+    const snap = await getDocs(q);
+    snap.forEach(async (docSnap) => {
+      const data = docSnap.data();
+      const entryKey = normalizeAuthorKey(data.authorName || data.author || "");
+      if (entryKey === authorKey && !data.authorUid) {
+        await updateDoc(docSnap.ref, {
+          authorUid: uid,
+          authorKey: authorKey
+        });
+      }
+    });
+  } catch (err) {
+    console.warn("Eski içerik eşleştirme atlandı:", err);
+  }
+}
+
+// Okuyucu Girişi Butonu
+if (btnReader) {
+  btnReader.addEventListener("click", async () => {
+    if (auth.currentUser) {
+      await signOut(auth);
+    }
+    currentRole = "reader";
+    localStorage.setItem("grotesk_role", "reader");
+    isAdmin = false;
+    currentAuthorName = "";
+    currentAuthorKey = "";
+    showMainSite("reader");
+    listenEntries();
+  });
+}
+
+// Çıkış Yap Butonu
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn("Çıkış hatası:", e);
+    }
+    currentRole = "";
+    localStorage.removeItem("grotesk_role");
+    isAdmin = false;
+    currentAuthorName = "";
+    currentAuthorKey = "";
+    showLoginPage();
+  });
+}
+
+/* ===================================================
+   GENEL SİTE TANITIM DUYURUSU (MODAL)
    =================================================== */
 const noticeModal = document.getElementById("notice-modal");
 const btnNoticeDismiss = document.getElementById("btn-notice-dismiss");
 
 if (btnNoticeDismiss && noticeModal) {
   btnNoticeDismiss.addEventListener("click", () => {
-    localStorage.setItem("grotesk_notice_v1", "true");
+    localStorage.setItem("grotesk_intro_seen", "true");
     noticeModal.classList.add("hidden");
   });
 }
 
 function checkNoticeModal() {
-  if (noticeModal && !localStorage.getItem("grotesk_notice_v1")) {
+  if (noticeModal && !localStorage.getItem("grotesk_intro_seen")) {
     noticeModal.classList.remove("hidden");
   }
 }
 checkNoticeModal();
 
 /* ===================================================
-   YAZAR ŞİFRESİ VE DOĞRULAMA
+   YAZAR İŞLEMLERİ İÇİN ŞİFRE TEKRAR DOĞRULAMA (REAUTHENTICATE)
    =================================================== */
 const authorAuthModal = document.getElementById("author-auth-modal");
 const closeAuthorAuthModal = document.getElementById("close-author-auth-modal");
 const authorAuthTitle = document.getElementById("author-auth-title");
 const authorAuthDesc = document.getElementById("author-auth-desc");
-const authorAuthPassGroup = document.getElementById("author-auth-pass-group");
-const authorAuthPassLabel = document.getElementById("author-auth-pass-label");
 const authorAuthPass = document.getElementById("author-auth-pass");
-const authorAuthInfoBox = document.getElementById("author-auth-info-box");
 const authorAuthError = document.getElementById("author-auth-error");
 const btnAuthorAuthCancel = document.getElementById("btn-author-auth-cancel");
 
-function getAuthorCooldown(authorKey) {
-  try {
-    const raw = localStorage.getItem(`grotesk_author_cd_${authorKey}`);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { failedCount: 0, lockUntil: 0 };
-}
-
-function saveAuthorCooldown(authorKey, state) {
-  localStorage.setItem(`grotesk_author_cd_${authorKey}`, JSON.stringify(state));
-}
-
 let activeAuthResolver = null;
 
-function closeAuthorAuthModalFn() {
+function closeAuthModal() {
   if (authorAuthModal) authorAuthModal.classList.add("hidden");
   if (activeAuthResolver) {
     const r = activeAuthResolver;
@@ -269,36 +398,23 @@ function closeAuthorAuthModalFn() {
   }
 }
 
-if (closeAuthorAuthModal) closeAuthorAuthModal.addEventListener("click", closeAuthorAuthModalFn);
-if (btnAuthorAuthCancel) btnAuthorAuthCancel.addEventListener("click", closeAuthorAuthModalFn);
+if (closeAuthorAuthModal) closeAuthorAuthModal.addEventListener("click", closeAuthModal);
+if (btnAuthorAuthCancel) btnAuthorAuthCancel.addEventListener("click", closeAuthModal);
 if (authorAuthModal) {
   authorAuthModal.addEventListener("click", (e) => {
-    if (e.target === authorAuthModal) closeAuthorAuthModalFn();
+    if (e.target === authorAuthModal) closeAuthModal();
   });
 }
 
-function authorizeAuthor(rawAuthorName) {
-  return new Promise(async (resolve) => {
-    const cleanName = (rawAuthorName || "").trim() || "Grotesk Yazarı";
-    const authorKey = cleanName.toLowerCase();
-
-    const cd = getAuthorCooldown(authorKey);
-    if (cd.lockUntil && Date.now() < cd.lockUntil) {
-      const remainingSec = Math.ceil((cd.lockUntil - Date.now()) / 1000);
-      const m = Math.floor(remainingSec / 60);
-      const s = remainingSec % 60;
-      alert(`"${cleanName}" yazarı için şifre üst üste 5 kez hatalı girildiği için işlem kilitlenmiştir. Lütfen ${m} dk ${s} sn sonra tekrar deneyin.`);
-      resolve(false);
-      return;
-    }
-
-    const authorDocRef = doc(db, AUTHORS_COLLECTION, authorKey);
-    let authorDocSnap;
-    try {
-      authorDocSnap = await getDoc(authorDocRef);
-    } catch (err) {
-      console.error("Yazar verisi alınamadı:", err);
-      alert("Yazar bilgisi doğrulanırken hata oluştu: " + err.message);
+/**
+ * Yazı eklerken, düzenlerken, gizlerken veya silerken
+ * doğrudan Firebase Authentication reauthenticateWithCredential ile şifre doğrular.
+ */
+function requestAuthorReauth(actionTitle = "İşlemi Onayla") {
+  return new Promise((resolve) => {
+    const user = auth.currentUser;
+    if (!user || !user.email) {
+      alert("Bu işlem için yazar olarak giriş yapmış olmanız gerekir.");
       resolve(false);
       return;
     }
@@ -306,113 +422,54 @@ function authorizeAuthor(rawAuthorName) {
     activeAuthResolver = resolve;
     if (authorAuthError) authorAuthError.innerText = "";
     if (authorAuthPass) authorAuthPass.value = "";
-
-    const isLocked = authorDocSnap.exists();
+    if (authorAuthTitle) authorAuthTitle.innerText = actionTitle;
+    if (authorAuthDesc) {
+      authorAuthDesc.innerText = `'${currentAuthorName}' hesabınızla bu işlemi onaylamak için lütfen şifrenizi girin:`;
+    }
 
     let submitBtnEl = document.getElementById("btn-author-auth-submit");
     const freshBtn = submitBtnEl.cloneNode(true);
     submitBtnEl.replaceWith(freshBtn);
     submitBtnEl = freshBtn;
 
-    if (!isLocked) {
-      let chosenPassword = "";
-      let step = 1;
+    authorAuthModal.classList.remove("hidden");
+    if (authorAuthPass) authorAuthPass.focus();
 
-      authorAuthTitle.innerText = "Yazar İsmini Kilitle";
-      authorAuthDesc.innerText = `'${cleanName}' ismi henüz şifre ile kilitlenmemiş. Bu ismin sahibi sizseniz, içeriklerinizi korumak için kişisel bir şifre belirleyin.`;
-      authorAuthPassGroup.classList.remove("hidden");
-      authorAuthPassLabel.innerText = "Yeni Kişisel Şifre";
-      authorAuthInfoBox.classList.add("hidden");
-      submitBtnEl.innerText = "Şifreyi Belirle";
-      authorAuthModal.classList.remove("hidden");
-      if (authorAuthPass) authorAuthPass.focus();
+    submitBtnEl.addEventListener("click", async () => {
+      const pass = authorAuthPass ? authorAuthPass.value : "";
+      if (!pass) {
+        if (authorAuthError) authorAuthError.innerText = "Lütfen şifrenizi girin.";
+        return;
+      }
 
-      submitBtnEl.addEventListener("click", async () => {
-        if (step === 1) {
-          const pass = authorAuthPass ? authorAuthPass.value : "";
-          if (!pass.trim()) {
-            authorAuthError.innerText = "Lütfen bir şifre belirleyin.";
-            return;
-          }
-          chosenPassword = pass;
-          step = 2;
+      submitBtnEl.disabled = true;
+      submitBtnEl.innerText = "Doğrulanıyor...";
+      if (authorAuthError) authorAuthError.innerText = "";
 
-          authorAuthTitle.innerText = "Önemli Bilgilendirme";
-          authorAuthDesc.innerText = `'${cleanName}' ismi için şifreniz kaydedilmek üzere.`;
-          authorAuthPassGroup.classList.add("hidden");
-          authorAuthInfoBox.classList.remove("hidden");
-          authorAuthError.innerText = "";
-          submitBtnEl.innerText = "Anladım ve Kilitle";
-        } else if (step === 2) {
-          submitBtnEl.disabled = true;
-          submitBtnEl.innerText = "Kaydediliyor...";
-          try {
-            const hash = await sha256(chosenPassword);
-            await setDoc(authorDocRef, {
-              authorName: cleanName,
-              passcodeHash: hash,
-              createdAt: serverTimestamp()
-            });
-            submitBtnEl.disabled = false;
-            authorAuthModal.classList.add("hidden");
-            activeAuthResolver = null;
-            resolve(true);
-          } catch (err) {
-            console.error("Yazar kilitleme hatası:", err);
-            authorAuthError.innerText = "Hata: " + err.message;
-            submitBtnEl.disabled = false;
-            submitBtnEl.innerText = "Anladım ve Kilitle";
-          }
-        }
-      });
+      try {
+        const credential = EmailAuthProvider.credential(user.email, pass);
+        await reauthenticateWithCredential(user, credential);
 
-    } else {
-      authorAuthTitle.innerText = "Yazar Şifresi Doğrulama";
-      authorAuthDesc.innerText = `'${cleanName}' ismi kişisel şifre ile kilitlenmiştir. Bu işlemi tamamlamak için şifrenizi girin:`;
-      authorAuthPassGroup.classList.remove("hidden");
-      authorAuthPassLabel.innerText = "Yazar Şifresi";
-      authorAuthInfoBox.classList.add("hidden");
-      submitBtnEl.innerText = "Onayla";
-      authorAuthModal.classList.remove("hidden");
-      if (authorAuthPass) authorAuthPass.focus();
-
-      submitBtnEl.addEventListener("click", async () => {
-        const pass = authorAuthPass ? authorAuthPass.value : "";
-        if (!pass) {
-          authorAuthError.innerText = "Lütfen şifrenizi girin.";
-          return;
-        }
-
-        const hash = await sha256(pass);
-        const storedHash = authorDocSnap.data()?.passcodeHash;
-
-        if (hash === storedHash || hash === MASTER_RECOVERY_HASH) {
-          saveAuthorCooldown(authorKey, { failedCount: 0, lockUntil: 0 });
-          authorAuthModal.classList.add("hidden");
-          activeAuthResolver = null;
-          resolve(true);
-        } else {
-          const currentCd = getAuthorCooldown(authorKey);
-          currentCd.failedCount = (currentCd.failedCount || 0) + 1;
-
-          if (currentCd.failedCount >= 5) {
-            currentCd.lockUntil = Date.now() + 5 * 60 * 1000;
-            currentCd.failedCount = 0;
-            saveAuthorCooldown(authorKey, currentCd);
-            authorAuthError.innerText = "Şifre üst üste 5 kez hatalı girildi! 5 dakika boyunca işlem yapılamaz.";
-            submitBtnEl.disabled = true;
-            setTimeout(() => {
-              submitBtnEl.disabled = false;
-              closeAuthorAuthModalFn();
-            }, 2500);
+        // Başarılı doğrulama
+        authorAuthModal.classList.add("hidden");
+        activeAuthResolver = null;
+        resolve(true);
+      } catch (err) {
+        console.warn("Şifre doğrulama hatası:", err.code);
+        if (authorAuthError) {
+          if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+            authorAuthError.innerText = "Hatalı şifre. Lütfen tekrar deneyin.";
+          } else if (err.code === "auth/too-many-requests") {
+            authorAuthError.innerText = "Çok fazla hatalı deneme. Lütfen bekleyin.";
           } else {
-            saveAuthorCooldown(authorKey, currentCd);
-            const remaining = 5 - currentCd.failedCount;
-            authorAuthError.innerText = `Hatalı şifre! (${remaining} hakkınız kaldı)`;
+            authorAuthError.innerText = "Doğrulama hatası: " + (err.message || "");
           }
         }
-      });
-    }
+      } finally {
+        submitBtnEl.disabled = false;
+        submitBtnEl.innerText = "Onayla";
+      }
+    });
   });
 }
 
@@ -450,7 +507,7 @@ if (savedToggleBtn) {
 }
 
 /* ===================================================
-   KAYDEDİLENLER (LOCAL STORAGE BOOKMARKS)
+   KAYDEDİLENLER (BOOKMARKS)
    =================================================== */
 function getSavedPosts() {
   try {
@@ -485,7 +542,7 @@ function updateSavedBadge() {
 }
 
 /* ===================================================
-   TEKİL GÖRÜNTÜLENME VE BEĞENİ YÖNETİMİ
+   GÖRÜNTÜLENME VE BEĞENİ YÖNETİMİ
    =================================================== */
 async function registerView(docId) {
   const viewKey = 'viewed_' + docId;
@@ -495,7 +552,7 @@ async function registerView(docId) {
       await updateDoc(docRef, { views: increment(1) });
       localStorage.setItem(viewKey, 'true');
     } catch (err) {
-      console.error("Görüntülenme artırma hatası:", err);
+      console.warn("Görüntülenme artırma atlandı:", err);
     }
   }
 }
@@ -519,11 +576,11 @@ async function toggleLike(docId) {
 }
 
 /* ===================================================
-   ANONİM YORUM SİSTEMİ & SİLME YETKİSİ
+   YORUMLAR SİSTEMİ & SİLME YETKİSİ
    =================================================== */
 let currentCommentUnsubscribe = null;
 
-function listenComments(postId) {
+function listenComments(postId, postAuthorUid) {
   if (currentCommentUnsubscribe) {
     currentCommentUnsubscribe();
     currentCommentUnsubscribe = null;
@@ -533,19 +590,20 @@ function listenComments(postId) {
   if (!commentsListEl) return;
 
   const commentsRef = collection(db, COLLECTION_NAME, postId, "comments");
-  const q = query(commentsRef, orderBy("createdAt", "asc"));
 
-  currentCommentUnsubscribe = onSnapshot(q, (snapshot) => {
+  currentCommentUnsubscribe = onSnapshot(commentsRef, (snapshot) => {
     commentsListEl.innerHTML = "";
     if (snapshot.empty) {
       commentsListEl.innerHTML = '<div class="no-comments">— Henüz yorum yapılmamış —</div>';
       return;
     }
 
-    snapshot.forEach((commentDoc) => {
-      const commentData = commentDoc.data();
-      const commentId = commentDoc.id;
+    const comments = [];
+    snapshot.forEach(docSnap => comments.push({ id: docSnap.id, ...docSnap.data() }));
+    // Tarihe göre sırala
+    comments.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
 
+    comments.forEach((commentData) => {
       let dateStr = "";
       if (commentData.createdAt && commentData.createdAt.seconds) {
         dateStr = new Date(commentData.createdAt.seconds * 1000).toLocaleString("tr-TR", {
@@ -555,19 +613,33 @@ function listenComments(postId) {
 
       const item = document.createElement("div");
       item.className = "comment-item";
+
+      const canDelete = currentRole === "author" && auth.currentUser && (
+        postAuthorUid === auth.currentUser.uid || isAdmin
+      );
+
       item.innerHTML = `
         <div class="comment-content">
           <p class="comment-text">${escapeHtml(commentData.text || "")}</p>
           ${dateStr ? `<span class="comment-date">${dateStr}</span>` : ""}
         </div>
-        <button type="button" class="comment-delete-btn">Sil</button>
+        ${canDelete ? `<button type="button" class="comment-delete-btn">Sil</button>` : ""}
       `;
 
-      item.querySelector(".comment-delete-btn").addEventListener("click", () => {
-        const entryData = allEntries.find(e => e.id === postId);
-        const entryAuthor = (entryData && (entryData.authorName || entryData.author)) || "Grotesk Yazarı";
-        deleteComment(postId, commentId, entryAuthor);
-      });
+      if (canDelete) {
+        item.querySelector(".comment-delete-btn").addEventListener("click", async () => {
+          if (!confirm("Bu yorumu silmek istediğinize emin misiniz?")) return;
+          const isVerified = await requestAuthorReauth("Yorumu Sil");
+          if (!isVerified) return;
+
+          try {
+            await deleteDoc(doc(db, COLLECTION_NAME, postId, "comments", commentData.id));
+          } catch (err) {
+            console.error("Yorum silme hatası:", err);
+            alert("Yorum silinemedi: " + err.message);
+          }
+        });
+      }
 
       commentsListEl.appendChild(item);
     });
@@ -582,42 +654,21 @@ async function addComment(postId) {
   const text = inputEl.value.trim();
   if (!text) return;
 
+  if (text.length > 500) {
+    alert("Yorum en fazla 500 karakter olabilir.");
+    return;
+  }
+
   try {
     const commentsRef = collection(db, COLLECTION_NAME, postId, "comments");
-    const docRef = await addDoc(commentsRef, {
+    await addDoc(commentsRef, {
       text: text,
       createdAt: serverTimestamp()
     });
-    localStorage.setItem('my_comment_' + docRef.id, 'true');
     inputEl.value = "";
   } catch (err) {
     console.error("Yorum ekleme hatası:", err);
     alert("Yorum eklenirken hata oluştu: " + err.message);
-  }
-}
-
-async function deleteComment(postId, commentId, entryAuthorName) {
-  const isMyComment = localStorage.getItem('my_comment_' + commentId);
-
-  // A) Cihazda kayıt varsa şifresiz direkt siler
-  if (isMyComment) {
-    try {
-      await deleteDoc(doc(db, COLLECTION_NAME, postId, "comments", commentId));
-      localStorage.removeItem('my_comment_' + commentId);
-    } catch (err) {
-      console.error("Yorum silme hatası:", err);
-    }
-    return;
-  }
-
-  // B) Cihazda kayıt yoksa Yazar / Master şifresi doğrulaması ister
-  const isAuthorized = await authorizeAuthor(entryAuthorName);
-  if (isAuthorized) {
-    try {
-      await deleteDoc(doc(db, COLLECTION_NAME, postId, "comments", commentId));
-    } catch (err) {
-      console.error("Yorum silme hatası:", err);
-    }
   }
 }
 
@@ -628,6 +679,7 @@ const addModal = document.getElementById("add-modal");
 const closeAddModalBtn = document.getElementById("close-add-modal");
 const addBtns = document.querySelectorAll(".add-btn");
 const catBtns = document.querySelectorAll("#cat-select-group .cat-btn");
+const entryAuthorInput = document.getElementById("entry-author");
 
 let selectedCategory = "metinler";
 
@@ -636,6 +688,9 @@ addBtns.forEach(btn => {
     if (currentRole !== "author") return;
     const cat = btn.dataset.cat || "metinler";
     setSelectedCategory(cat);
+    if (entryAuthorInput) {
+      entryAuthorInput.value = currentAuthorName;
+    }
     if (addModal) addModal.classList.remove("hidden");
   });
 });
@@ -715,20 +770,18 @@ function fileToBase64(file) {
 const submitBtn = document.getElementById("submit-entry");
 const titleInput = document.getElementById("entry-title");
 const commentInput = document.getElementById("entry-comment");
-const authorInput = document.getElementById("entry-author");
 const isOwnCheck = document.getElementById("is-own-text");
 const isHiddenCheck = document.getElementById("entry-hidden");
 
 if (submitBtn) {
   submitBtn.addEventListener("click", async () => {
-    if (currentRole !== "author") {
+    if (currentRole !== "author" || !auth.currentUser) {
       alert("Okuyucu modunda içerik eklenemez.");
       return;
     }
 
     const title = titleInput?.value.trim() || "";
     const comment = commentInput?.value.trim() || "";
-    const authorName = authorInput?.value.trim() || "Grotesk Yazarı";
     const isOwn = isOwnCheck?.checked || false;
     const isHidden = isHiddenCheck?.checked || false;
     const file = fileInput?.files[0];
@@ -743,7 +796,8 @@ if (submitBtn) {
       return;
     }
 
-    const isAuthorized = await authorizeAuthor(authorName);
+    // İşlem öncesi Firebase Auth şifre doğrulaması
+    const isAuthorized = await requestAuthorReauth("İçerik Paylaşımını Onayla");
     if (!isAuthorized) return;
 
     submitBtn.disabled = true;
@@ -762,7 +816,9 @@ if (submitBtn) {
         title: title || "Başlıksız",
         comment: comment || "",
         category: selectedCategory,
-        authorName: authorName,
+        authorName: currentAuthorName,
+        authorKey: currentAuthorKey,
+        authorUid: auth.currentUser.uid,
         isOwn: isOwn,
         isHidden: isHidden,
         fileData: fileData,
@@ -775,7 +831,6 @@ if (submitBtn) {
 
       if (titleInput) titleInput.value = "";
       if (commentInput) commentInput.value = "";
-      if (authorInput) authorInput.value = "";
       if (fileInput) fileInput.value = "";
       if (filePreview) filePreview.innerHTML = "";
       if (isOwnCheck) isOwnCheck.checked = false;
@@ -797,15 +852,36 @@ if (submitBtn) {
    VERİLERİ DİNLEME VE LİSTELEME
    =================================================== */
 let allEntries = [];
+let entriesUnsubscribe = null;
 
 function listenEntries() {
-  const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
+  if (entriesUnsubscribe) {
+    entriesUnsubscribe();
+    entriesUnsubscribe = null;
+  }
 
-  onSnapshot(q, (snapshot) => {
+  // Güvenlik kurallarıyla birebir uyumlu sorgu:
+  // Okuyucu modunda isHidden == false zorunludur.
+  let q;
+  if (currentRole === "author" && auth.currentUser) {
+    q = collection(db, COLLECTION_NAME);
+  } else {
+    q = query(collection(db, COLLECTION_NAME), where("isHidden", "==", false));
+  }
+
+  entriesUnsubscribe = onSnapshot(q, (snapshot) => {
     allEntries = [];
     snapshot.forEach(docSnap => {
       allEntries.push({ id: docSnap.id, ...docSnap.data() });
     });
+
+    // İstemci tarafında en yeniden en eskiye sırala
+    allEntries.sort((a, b) => {
+      const timeA = a.createdAt?.seconds || 0;
+      const timeB = b.createdAt?.seconds || 0;
+      return timeB - timeA;
+    });
+
     renderAllEntries();
     updateSavedBadge();
   }, (err) => {
@@ -832,6 +908,7 @@ function renderAllEntries() {
   const savedIds = getSavedPosts();
 
   const filtered = allEntries.filter(item => {
+    // Okuyucu modu gizli içerikleri göremez
     if (item.isHidden && currentRole === "reader") return false;
 
     if (!searchTerm) return true;
@@ -907,7 +984,9 @@ function createCard(data) {
   const rawComment = data.comment || "";
   const displayComment = rawComment.length > 40 ? rawComment.slice(0, 40) + "…" : rawComment;
 
-  const authorDisp = data.authorName || data.author || "Grotesk Yazarı";
+  // Baş harfleri büyük (Title Case) yazar ismi
+  const rawAuthor = data.authorName || data.author || "Grotesk Yazarı";
+  const authorDisp = toTitleCase(rawAuthor);
 
   const isLiked = !!localStorage.getItem('liked_' + data.id);
   const isSaved = isPostSaved(data.id);
@@ -961,8 +1040,15 @@ function createCard(data) {
     });
   }
 
-  // Yazar Yetki Butonları
-  if (currentRole === "author") {
+  // Yazar / Yönetici İşlem Butonları
+  // Yalnızca içeriğin gerçek sahibi olan yazar veya admin işlem yapabilir
+  const isOwner = currentRole === "author" && auth.currentUser && (
+    (data.authorUid && data.authorUid === auth.currentUser.uid) ||
+    (!data.authorUid && normalizeAuthorKey(data.authorName) === currentAuthorKey) ||
+    isAdmin
+  );
+
+  if (isOwner) {
     const acts = document.createElement("div");
     acts.className = "entry-actions";
     acts.innerHTML = `
@@ -976,33 +1062,31 @@ function createCard(data) {
       openEditModal(data);
     });
 
-    // "Gizle" / "Göster" butonu için ŞİFRE KORUMASI
     acts.querySelector('[data-act="hide"]').addEventListener("click", async (e) => {
       e.stopPropagation();
-      const targetAuthor = data.authorName || data.author || "Grotesk Yazarı";
-      
-      const isAuthorized = await authorizeAuthor(targetAuthor);
+      const isAuthorized = await requestAuthorReauth("İçerik Durumunu Değiştir");
       if (!isAuthorized) return;
 
       try {
         await updateDoc(doc(db, COLLECTION_NAME, data.id), { isHidden: !data.isHidden });
       } catch (err) {
         console.error("Gizleme hatası:", err);
+        alert("İşlem başarısız: " + err.message);
       }
     });
 
     acts.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
       e.stopPropagation();
-      const targetAuthor = data.authorName || data.author || "Grotesk Yazarı";
       if (!confirm("Bu içeriği silmek istediğinize emin misiniz?")) return;
 
-      const isAuthorized = await authorizeAuthor(targetAuthor);
+      const isAuthorized = await requestAuthorReauth("İçeriği Sil");
       if (!isAuthorized) return;
 
       try {
         await deleteDoc(doc(db, COLLECTION_NAME, data.id));
       } catch (err) {
         console.error("Silme hatası:", err);
+        alert("Silme işlemi başarısız: " + err.message);
       }
     });
 
@@ -1010,12 +1094,11 @@ function createCard(data) {
   }
 
   card.addEventListener("click", () => openViewModal(data));
-
   return card;
 }
 
 /* ===================================================
-   DETAY / OKUMA MODALI & YORUMLAR
+   DETAY / OKUMA MODALI
    =================================================== */
 const viewModal = document.getElementById("view-modal");
 const closeViewModalBtn = document.getElementById("close-view-modal");
@@ -1050,7 +1133,8 @@ function openViewModal(data) {
     mediaData.includes(".gif")
   );
 
-  const authorDisp = data.authorName || data.author || "Grotesk Yazarı";
+  const rawAuthor = data.authorName || data.author || "Grotesk Yazarı";
+  const authorDisp = toTitleCase(rawAuthor);
 
   let mediaHtml = "";
   if (mediaData) {
@@ -1081,7 +1165,7 @@ function openViewModal(data) {
 
   viewBody.innerHTML = html;
 
-  listenComments(data.id);
+  listenComments(data.id, data.authorUid);
 
   if (submitCommentBtn) {
     const newSubmitBtn = submitCommentBtn.cloneNode(true);
@@ -1091,7 +1175,13 @@ function openViewModal(data) {
 
   if (viewActions) {
     viewActions.innerHTML = "";
-    if (currentRole === "author") {
+    const isOwner = currentRole === "author" && auth.currentUser && (
+      (data.authorUid && data.authorUid === auth.currentUser.uid) ||
+      (!data.authorUid && normalizeAuthorKey(data.authorName) === currentAuthorKey) ||
+      isAdmin
+    );
+
+    if (isOwner) {
       const editBtn = document.createElement("button");
       editBtn.className = "add-btn";
       editBtn.innerText = "Düzenle";
@@ -1106,10 +1196,8 @@ function openViewModal(data) {
       delBtn.innerText = "Sil";
       delBtn.style.marginBottom = "0";
       delBtn.addEventListener("click", async () => {
-        const targetAuthor = data.authorName || data.author || "Grotesk Yazarı";
         if (!confirm("Bu içeriği silmek istediğinize emin misiniz?")) return;
-
-        const isAuthorized = await authorizeAuthor(targetAuthor);
+        const isAuthorized = await requestAuthorReauth("İçeriği Sil");
         if (!isAuthorized) return;
 
         viewModal.classList.add("hidden");
@@ -1117,6 +1205,7 @@ function openViewModal(data) {
           await deleteDoc(doc(db, COLLECTION_NAME, data.id));
         } catch (err) {
           console.error("Silme hatası:", err);
+          alert("Silme işlemi başarısız: " + err.message);
         }
       });
 
@@ -1129,7 +1218,7 @@ function openViewModal(data) {
 }
 
 /* ===================================================
-   DÜZENLEME MODALI (SADECE YAZAR)
+   DÜZENLEME MODALI (SADECE İÇERİK SAHİBİ YAZAR VEYA ADMIN)
    =================================================== */
 const editModal = document.getElementById("edit-modal");
 const closeEditModalBtn = document.getElementById("close-edit-modal");
@@ -1161,7 +1250,7 @@ function openEditModal(data) {
 
   if (editTitle) editTitle.value = data.title || "";
   if (editComment) editComment.value = data.comment || "";
-  if (editAuthor) editAuthor.value = data.authorName || data.author || "";
+  if (editAuthor) editAuthor.value = toTitleCase(data.authorName || data.author || currentAuthorName);
   if (editOwn) editOwn.checked = !!data.isOwn;
   if (editHidden) editHidden.checked = !!data.isHidden;
   if (editOwnRow) editOwnRow.style.display = data.category === "metinler" ? "" : "none";
@@ -1171,18 +1260,11 @@ function openEditModal(data) {
 
 if (submitEditBtn) {
   submitEditBtn.addEventListener("click", async () => {
-    if (!currentEditingId) return;
+    if (!currentEditingId || !auth.currentUser) return;
 
-    const originalAuthor = (currentEditingData && (currentEditingData.authorName || currentEditingData.author)) || "Grotesk Yazarı";
-    const editAuthor = document.getElementById("edit-author")?.value.trim() || originalAuthor;
-
-    const isAuthorized = await authorizeAuthor(originalAuthor);
+    // Tekrar şifre doğrulaması
+    const isAuthorized = await requestAuthorReauth("Değişiklikleri Kaydet");
     if (!isAuthorized) return;
-
-    if (editAuthor.toLowerCase() !== originalAuthor.toLowerCase()) {
-      const isNewAuthorized = await authorizeAuthor(editAuthor);
-      if (!isNewAuthorized) return;
-    }
 
     const editTitle = document.getElementById("edit-title")?.value.trim() || "Başlıksız";
     const editComment = document.getElementById("edit-comment")?.value.trim() || "";
@@ -1193,13 +1275,20 @@ if (submitEditBtn) {
     submitEditBtn.innerText = "Kaydediliyor...";
 
     try {
-      await updateDoc(doc(db, COLLECTION_NAME, currentEditingId), {
+      const updatePayload = {
         title: editTitle,
         comment: editComment,
-        authorName: editAuthor,
         isOwn: editOwn,
         isHidden: editHidden
-      });
+      };
+
+      // Eğer eski belgede authorUid eksikse bu güncellemede mevcut yazarın uid'si bağlanır
+      if (!currentEditingData?.authorUid) {
+        updatePayload.authorUid = auth.currentUser.uid;
+        updatePayload.authorKey = currentAuthorKey;
+      }
+
+      await updateDoc(doc(db, COLLECTION_NAME, currentEditingId), updatePayload);
 
       if (editModal) editModal.classList.add("hidden");
     } catch (err) {
@@ -1212,20 +1301,6 @@ if (submitEditBtn) {
   });
 }
 
-/* ===================================================
-   YARDIMCI FONKSİYONLAR
-   =================================================== */
-function escapeHtml(str) {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
 document.addEventListener("DOMContentLoaded", () => {
-  listenEntries();
   updateSavedBadge();
 });
