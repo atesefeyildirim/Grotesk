@@ -15,6 +15,7 @@
     <div class="login-box">
       <h1 class="login-title">Grotesk</h1>
       <form id="login-form" autocomplete="off">
+        <input type="text" id="login-nick" placeholder="Yazar İsmi" />
         <input type="password" id="login-pass" placeholder="Şifre" />
         <div class="login-buttons-group">
           <button type="submit" id="btn-author-login">Yazar Girişi</button>
@@ -158,7 +159,7 @@
       <!-- Grotesk Yazarı İsmi -->
       <div class="mf">
         <label>Grotesk Yazarı İsmi <span class="mf-sub">bu içeriği ekleyen kişi</span></label>
-        <input type="text" id="entry-author" placeholder="Grotesk yazarı ismi…" />
+        <input type="text" id="entry-author" placeholder="Grotesk yazarı ismi…" readonly disabled />
       </div>
 
       <div class="mf">
@@ -211,7 +212,7 @@
       </div>
       <div class="mf">
         <label>Grotesk Yazarı İsmi</label>
-        <input type="text" id="edit-author" placeholder="Grotesk yazarı ismi…" />
+        <input type="text" id="edit-author" placeholder="Grotesk yazarı ismi…" readonly disabled />
       </div>
       <div class="mf">
         <label class="cb-label">
@@ -226,11 +227,11 @@
   <!-- MODAL: GENEL DUYURU -->
   <div class="modal-overlay hidden" id="notice-modal">
     <div class="modal-box" style="max-width: 480px; text-align: center;">
-      <h2 class="modal-title" style="margin-bottom: 20px;">Duyuru</h2>
+      <h2 class="modal-title" style="margin-bottom: 20px;">Grotesk</h2>
       <p style="font-size: 0.98rem; color: #d0d0d0; line-height: 1.8; margin-bottom: 28px;">
-        Grotesk kişisel yazar şifresi sistemine geçti. Sitede daha önce kullanılan veya yeni kullanılacak yazar isimleri ilk işlemde kişisel şifre ile kilitlenmektedir. İçeriklerinizi korumak için isminizi kilitlerken belirlediğiniz şifreyi unutmayınız.
+        Grotesk; edebiyat, müzik, sinema ve görsel sanatlar üzerine bağımsız metinlerin, özgün üretimlerin ve incelemelerin paylaşıldığı minimalist bir kültür platformudur.
       </p>
-      <button type="button" class="submit-btn" id="btn-notice-dismiss" style="margin-top: 0;">Anladım</button>
+      <button type="button" class="submit-btn" id="btn-notice-dismiss" style="margin-top: 0;">Keşfet</button>
     </div>
   </div>
 
