@@ -16,11 +16,30 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    function isAuthor(docData) {
-      return isAuthenticated() && (
-        docData.get('authorUid', '') == request.auth.uid ||
-        isAdmin()
-      );
+    // ===============================================================
+    // Authors Domain Validators
+    // ===============================================================
+
+    function isValidAuthorCreate() {
+      let data = request.resource.data;
+      return isAuthenticated() &&
+             isAdmin() &&
+             !('passcodeHash' in data) &&
+             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 750000));
+    }
+
+    function isValidAuthorUpdate() {
+      let data = request.resource.data;
+      return isAuthenticated() &&
+             !('passcodeHash' in data) &&
+             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 750000)) &&
+             (
+               isAdmin() ||
+               (
+                 resource.data.get('authorUid', '') == request.auth.uid &&
+                 data.get('authorUid', '') == resource.data.get('authorUid', '')
+               )
+             );
     }
 
     // ===============================================================
@@ -30,7 +49,7 @@ service cloud.firestore {
     function isValidInitialEntry() {
       let data = request.resource.data;
       return isAuthenticated() &&
-             data.get('authorUid', '') == request.auth.uid &&
+             (data.get('authorUid', '') == request.auth.uid || isAdmin()) &&
              data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
              data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 100 &&
              data.category is string && data.category.size() >= 1 &&
@@ -69,8 +88,8 @@ service cloud.firestore {
     // Author or Admin content update
     function isValidContentUpdate() {
       return isAuthenticated() &&
-             (isAuthor(resource.data) || isAdmin()) &&
-             request.resource.data.get('authorUid', '') == resource.data.get('authorUid', request.auth.uid) &&
+             (resource.data.get('authorUid', '') == request.auth.uid || isAdmin()) &&
+             (request.resource.data.get('authorUid', '') == resource.data.get('authorUid', '') || isAdmin()) &&
              (isAdmin() || (
                request.resource.data.get('views', 0) == resource.data.get('views', 0) &&
                request.resource.data.get('likes', 0) == resource.data.get('likes', 0)
@@ -83,20 +102,23 @@ service cloud.firestore {
 
     // 1. ADMIN MANAGEMENT
     match /admins/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
-      allow write: if false; // System bootstrap, Firebase Console, or Admin SDK only
+      allow read: if true;
+      allow write: if isAuthenticated() && isAdmin();
     }
 
     // 2. GROTESK ENTRIES COLLECTION
     match /grotesk_entries/{entryId} {
-      // Okuyucu modu (giriş yapmamış) sadece isHidden == false okur; yazarlar ve admin her şeyi okur
+      // Okuyucu modu sadece isHidden == false okur; yazarlar ve admin her şeyi okur
       allow read: if resource.data.get('isHidden', false) == false || isAuthenticated();
 
       allow create: if isValidInitialEntry();
 
       allow update: if isValidMetricUpdate() || isValidContentUpdate();
 
-      allow delete: if isAuthor(resource.data);
+      allow delete: if isAuthenticated() && (
+        resource.data.get('authorUid', '') == request.auth.uid ||
+        isAdmin()
+      );
 
       // 3. COMMENTS SUBCOLLECTION
       match /comments/{commentId} {
@@ -119,8 +141,12 @@ service cloud.firestore {
     // 4. AUTHORS COLLECTION
     match /authors/{authorKey} {
       allow read: if true;
-      allow create, update: if isAuthenticated() && (request.resource.data.get('authorUid', '') == request.auth.uid || isAdmin());
-      allow delete: if isAdmin();
+
+      allow create: if isValidAuthorCreate();
+
+      allow update: if isValidAuthorUpdate();
+
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     // 5. DEFAULT DENY
