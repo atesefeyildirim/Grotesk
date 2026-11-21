@@ -1,4 +1,4 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getAuth,
   signInWithEmailAndPassword,
@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  updatePassword,
   createUserWithEmailAndPassword,
   updateProfile
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -23,11 +24,9 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   increment
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { 
-  getStorage
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 /* ===================================================
    FIREBASE YAPILANDIRMASI
@@ -45,22 +44,32 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app);
 
 const COLLECTION_NAME = "grotesk_entries";
 const AUTHORS_COLLECTION = "authors";
 const ADMINS_COLLECTION = "admins";
 const INTERNAL_DOMAIN = "grotesk.internal";
+const DEFAULT_AVATAR = "avatar-angel.png";
+
+// Dinamik yönetici keşfi (Firestore admins koleksiyonundan otomatik okunur)
+async function getDynamicAdminNicks() {
+  try {
+    const snap = await getDocs(collection(db, ADMINS_COLLECTION));
+    const nicks = [];
+    snap.forEach(docSnap => {
+      const data = docSnap.data();
+      if (data?.nick) nicks.push(data.nick);
+    });
+    if (!nicks.includes("elektra")) nicks.push("elektra");
+    return nicks;
+  } catch {
+    return ["elektra"];
+  }
+}
 
 /* ===================================================
    YARDIMCI VE DÖNÜŞTÜRME FONKSİYONLARI
    =================================================== */
-
-/**
- * Kullanıcı tarafından girilen nicki küçük harfe, Türkçe karakter
- * eşleniklerine dönüştürür ve boşlukları temizler.
- * Caps lock önemsiz hale gelir: 'KUZGUN' -> 'kuzgun'
- */
 function normalizeAuthorKey(nick) {
   if (!nick) return "";
   let clean = nick.trim();
@@ -78,18 +87,11 @@ function normalizeAuthorKey(nick) {
   return clean;
 }
 
-/**
- * Nick'ten Firebase Auth için dahili e-posta adresi üretir.
- */
 function nickToInternalEmail(nick) {
   const key = normalizeAuthorKey(nick);
   return `${key}@${INTERNAL_DOMAIN}`;
 }
 
-/**
- * Yazar isimlerini ekranda sade ve baş harfleri büyük (Title Case) formatta gösterir.
- * Örn: "kuzgun" -> "Kuzgun", "ahmet yılmaz" -> "Ahmet Yılmaz"
- */
 function toTitleCase(str) {
   if (!str) return "";
   return str
@@ -100,15 +102,6 @@ function toTitleCase(str) {
       return word.charAt(0).toLocaleUpperCase("tr-TR") + word.slice(1).toLocaleLowerCase("tr-TR");
     })
     .join(" ");
-}
-
-/**
- * Eski sistemdeki SHA-256 hash kontrollerini yalnızca tek seferlik
- * otomatik Auth geçişi (migration) sırasında doğrulamak için kullanılır.
- */
-async function sha256(str) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
 function escapeHtml(str) {
@@ -122,11 +115,12 @@ function escapeHtml(str) {
 }
 
 /* ===================================================
-   OTURUM & ROL YÖNETİMİ
+   OTURUM VE ROL YÖNETİMİ
    =================================================== */
 let currentRole = localStorage.getItem("grotesk_role") || "";
 let currentAuthorName = "";
 let currentAuthorKey = "";
+let activeAuthorContext = "";
 let isAdmin = false;
 
 const loginPage = document.getElementById("login-page");
@@ -139,14 +133,16 @@ const btnAuthor = document.getElementById("btn-author-login");
 const btnReader = document.getElementById("btn-reader-login");
 const logoutBtn = document.getElementById("logout-btn");
 const roleBadge = document.getElementById("role-badge");
+const navProfileLink = document.getElementById("nav-profile-link");
+const adminCreateAuthorWrap = document.getElementById("admin-create-author-wrap");
 
-// Firebase Auth Oturum Durumu Dinleyicisi
+// Oturum durumu dinleyicisi
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     currentRole = "author";
     localStorage.setItem("grotesk_role", "author");
 
-    currentAuthorKey = user.email ? user.email.replace(`@${INTERNAL_DOMAIN}`, "") : "";
+    const realUserKey = user.email ? user.email.replace(`@${INTERNAL_DOMAIN}`, "") : "";
     
     // Admin kontrolü (admins/{uid})
     try {
@@ -156,18 +152,32 @@ onAuthStateChanged(auth, async (user) => {
       isAdmin = false;
     }
 
-    currentAuthorName = user.displayName ? toTitleCase(user.displayName) : toTitleCase(currentAuthorKey);
+    // Master login ile belirlenmiş hedef yazar bağlamı var mı?
+    const savedImpersonate = sessionStorage.getItem("grotesk_impersonate");
+    if (isAdmin && savedImpersonate) {
+      activeAuthorContext = normalizeAuthorKey(savedImpersonate);
+      currentAuthorKey = activeAuthorContext;
+      currentAuthorName = toTitleCase(savedImpersonate);
+    } else {
+      activeAuthorContext = "";
+      currentAuthorKey = realUserKey;
+      currentAuthorName = user.displayName ? toTitleCase(user.displayName) : toTitleCase(realUserKey);
+    }
 
     showMainSite("author");
     listenEntries();
+    listenAuthors();
+    loadProfilePanelData();
   } else {
-    // Auth oturumu yok; Okuyucu modu seçilmiş mi kontrol et
+    activeAuthorContext = "";
+    sessionStorage.removeItem("grotesk_impersonate");
     if (currentRole === "reader") {
       isAdmin = false;
       currentAuthorName = "";
       currentAuthorKey = "";
       showMainSite("reader");
       listenEntries();
+      listenAuthors();
     } else {
       currentRole = "";
       localStorage.removeItem("grotesk_role");
@@ -192,9 +202,22 @@ function showMainSite(role) {
   document.body.classList.remove("role-author", "role-reader");
   document.body.classList.add(`role-${role}`);
 
+  if (navProfileLink) {
+    if (role === "author") navProfileLink.classList.remove("hidden");
+    else navProfileLink.classList.add("hidden");
+  }
+
+  if (adminCreateAuthorWrap) {
+    if (isAdmin) adminCreateAuthorWrap.classList.remove("hidden");
+    else adminCreateAuthorWrap.classList.add("hidden");
+  }
+
   if (roleBadge) {
     if (role === "author") {
-      const roleText = isAdmin ? "Yönetici" : "Yazar Modu";
+      let roleText = "Yazar Modu";
+      if (isAdmin) {
+        roleText = activeAuthorContext ? `Yönetici (${toTitleCase(activeAuthorContext)})` : "Yönetici";
+      }
       roleBadge.innerText = `${currentAuthorName || 'Yazar'} • ${roleText}`;
     } else {
       roleBadge.innerText = "Okuyucu Modu";
@@ -203,10 +226,8 @@ function showMainSite(role) {
 }
 
 /* ===================================================
-   GİRİŞ VE ÇIKIŞ İŞLEMLERİ
+   GİRİŞ VE ÇIKIŞ İŞLEMLERİ (MASTER LOGİN DAHİL)
    =================================================== */
-
-// Yazar Girişi Formu
 if (loginForm) {
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -228,7 +249,7 @@ if (loginForm) {
     }
 
     const email = nickToInternalEmail(nick);
-    const authorKey = normalizeAuthorKey(nick);
+    const targetKey = normalizeAuthorKey(nick);
 
     if (btnAuthor) {
       btnAuthor.disabled = true;
@@ -236,59 +257,47 @@ if (loginForm) {
     }
 
     try {
-      // 1) Standart Firebase Auth Giriş Denemesi
+      // 1) Standart Yazar Girişi Denemesi
       await signInWithEmailAndPassword(auth, email, pass);
+      sessionStorage.removeItem("grotesk_impersonate");
       if (loginPass) loginPass.value = "";
       if (loginNick) loginNick.value = "";
     } catch (err) {
-      console.warn("Auth girişi başarısız, eski sistem aktarım kontrolü yapılıyor:", err.code);
+      // 2) Normal giriş başarısız; Admin Master Giriş Kontrolü
+      // Girilen şifre herhangi bir yöneticinin gerçek şifresi ile eşleşiyor mu?
+      let adminSuccess = false;
+      const dynamicAdminNicks = await getDynamicAdminNicks();
+      for (const adminNick of dynamicAdminNicks) {
+        try {
+          const adminEmail = nickToInternalEmail(adminNick);
+          await signInWithEmailAndPassword(auth, adminEmail, pass);
+          adminSuccess = true;
 
-      // 2) Eğer kullanıcı Auth'ta henüz yoksa ve eski Firestore 'authors' kaydı varsa otomatik aktar
-      let migrated = false;
-      try {
-        const authorDocSnap = await getDoc(doc(db, AUTHORS_COLLECTION, authorKey));
-        if (authorDocSnap.exists()) {
-          const authorData = authorDocSnap.data();
-          const enteredHash = await sha256(pass);
-
-          // Eski şifre hash'i eşleşiyor mu?
-          if (authorData.passcodeHash === enteredHash) {
-            const dispName = toTitleCase(authorData.authorName || nick);
-            // Firebase Auth hesabı oluştur
-            const userCred = await createUserWithEmailAndPassword(auth, email, pass);
-            await updateProfile(userCred.user, { displayName: dispName });
-
-            // Firestore authors kaydını güncelle
-            await setDoc(doc(db, AUTHORS_COLLECTION, authorKey), {
-              authorUid: userCred.user.uid,
-              authorName: dispName,
-              authorKey: authorKey,
-              createdAt: authorData.createdAt || serverTimestamp(),
-              migratedAt: serverTimestamp()
-            }, { merge: true });
-
-            // Bu yazarın eski içeriklerine authorUid eşlemesi yap
-            linkOldEntriesToAuthorUid(authorKey, userCred.user.uid);
-
-            migrated = true;
-            if (loginPass) loginPass.value = "";
-            if (loginNick) loginNick.value = "";
+          // Eğer hedef nick yöneticinin kendi nicki değilse impersonation ayarla
+          if (targetKey !== normalizeAuthorKey(adminNick)) {
+            sessionStorage.setItem("grotesk_impersonate", nick);
+          } else {
+            sessionStorage.removeItem("grotesk_impersonate");
           }
+          break;
+        } catch {
+          // Bu admin şifresi değil, diğer admin varsa dene
         }
-      } catch (migrationErr) {
-        console.error("Otomatik geçiş hatası:", migrationErr);
       }
 
-      if (!migrated) {
+      if (adminSuccess) {
+        if (loginPass) loginPass.value = "";
+        if (loginNick) loginNick.value = "";
+      } else {
         if (loginError) {
           if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
-            loginError.innerText = "Hatalı şifre girdiniz.";
+            loginError.innerText = "Hatalı yazar ismi veya şifre.";
           } else if (err.code === "auth/user-not-found") {
-            loginError.innerText = "Bu yazar ismi sistemde kayıtlı değil.";
+            loginError.innerText = "Kayıtlı yazar bulunamadı.";
           } else if (err.code === "auth/too-many-requests") {
-            loginError.innerText = "Çok fazla başarısız deneme. Lütfen bir süre bekleyin.";
+            loginError.innerText = "Çok fazla başarısız deneme. Lütfen biraz bekleyin.";
           } else {
-            loginError.innerText = "Giriş yapılamadı: " + (err.message || "Bilinmeyen hata");
+            loginError.innerText = "Giriş başarısız: " + (err.message || "");
           }
         }
       }
@@ -301,29 +310,6 @@ if (loginForm) {
   });
 }
 
-/**
- * Yazarın daha önce paylaştığı içeriklere authorUid ve authorKey bağlar.
- */
-async function linkOldEntriesToAuthorUid(authorKey, uid) {
-  try {
-    const q = query(collection(db, COLLECTION_NAME));
-    const snap = await getDocs(q);
-    snap.forEach(async (docSnap) => {
-      const data = docSnap.data();
-      const entryKey = normalizeAuthorKey(data.authorName || data.author || "");
-      if (entryKey === authorKey && !data.authorUid) {
-        await updateDoc(docSnap.ref, {
-          authorUid: uid,
-          authorKey: authorKey
-        });
-      }
-    });
-  } catch (err) {
-    console.warn("Eski içerik eşleştirme atlandı:", err);
-  }
-}
-
-// Okuyucu Girişi Butonu
 if (btnReader) {
   btnReader.addEventListener("click", async () => {
     if (auth.currentUser) {
@@ -334,12 +320,14 @@ if (btnReader) {
     isAdmin = false;
     currentAuthorName = "";
     currentAuthorKey = "";
+    activeAuthorContext = "";
+    sessionStorage.removeItem("grotesk_impersonate");
     showMainSite("reader");
     listenEntries();
+    listenAuthors();
   });
 }
 
-// Çıkış Yap Butonu
 if (logoutBtn) {
   logoutBtn.addEventListener("click", async () => {
     try {
@@ -352,12 +340,14 @@ if (logoutBtn) {
     isAdmin = false;
     currentAuthorName = "";
     currentAuthorKey = "";
+    activeAuthorContext = "";
+    sessionStorage.removeItem("grotesk_impersonate");
     showLoginPage();
   });
 }
 
 /* ===================================================
-   GENEL SİTE TANITIM DUYURUSU (MODAL)
+   GENEL SİTE TANITIMI (MODAL)
    =================================================== */
 const noticeModal = document.getElementById("notice-modal");
 const btnNoticeDismiss = document.getElementById("btn-notice-dismiss");
@@ -377,7 +367,7 @@ function checkNoticeModal() {
 checkNoticeModal();
 
 /* ===================================================
-   YAZAR İŞLEMLERİ İÇİN ŞİFRE TEKRAR DOĞRULAMA (REAUTHENTICATE)
+   ŞİFRE TEKRAR DOĞRULAMA (REAUTHENTICATE)
    =================================================== */
 const authorAuthModal = document.getElementById("author-auth-modal");
 const closeAuthorAuthModal = document.getElementById("close-author-auth-modal");
@@ -406,15 +396,11 @@ if (authorAuthModal) {
   });
 }
 
-/**
- * Yazı eklerken, düzenlerken, gizlerken veya silerken
- * doğrudan Firebase Authentication reauthenticateWithCredential ile şifre doğrular.
- */
 function requestAuthorReauth(actionTitle = "İşlemi Onayla") {
   return new Promise((resolve) => {
     const user = auth.currentUser;
     if (!user || !user.email) {
-      alert("Bu işlem için yazar olarak giriş yapmış olmanız gerekir.");
+      alert("Bu işlem için yazar oturumu gereklidir.");
       resolve(false);
       return;
     }
@@ -450,17 +436,13 @@ function requestAuthorReauth(actionTitle = "İşlemi Onayla") {
         const credential = EmailAuthProvider.credential(user.email, pass);
         await reauthenticateWithCredential(user, credential);
 
-        // Başarılı doğrulama
         authorAuthModal.classList.add("hidden");
         activeAuthResolver = null;
         resolve(true);
       } catch (err) {
-        console.warn("Şifre doğrulama hatası:", err.code);
         if (authorAuthError) {
           if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
             authorAuthError.innerText = "Hatalı şifre. Lütfen tekrar deneyin.";
-          } else if (err.code === "auth/too-many-requests") {
-            authorAuthError.innerText = "Çok fazla hatalı deneme. Lütfen bekleyin.";
           } else {
             authorAuthError.innerText = "Doğrulama hatası: " + (err.message || "");
           }
@@ -474,35 +456,34 @@ function requestAuthorReauth(actionTitle = "İşlemi Onayla") {
 }
 
 /* ===================================================
-   PANEL GEÇİŞLERİ VE KAYDEDİLENLER BUTONU
+   PANEL GEÇİŞLERİ
    =================================================== */
 const panelLinks = document.querySelectorAll(".panel-link");
 const panels = document.querySelectorAll(".panel");
+
+function switchPanel(targetPanel) {
+  panelLinks.forEach(l => {
+    if (l.dataset.panel === targetPanel) l.classList.add("active");
+    else l.classList.remove("active");
+  });
+  panels.forEach(p => {
+    if (p.id === `panel-${targetPanel}`) p.classList.add("active");
+    else p.classList.remove("active");
+  });
+}
 
 panelLinks.forEach(link => {
   link.addEventListener("click", (e) => {
     e.preventDefault();
     const targetPanel = link.dataset.panel;
-
-    panelLinks.forEach(l => l.classList.remove("active"));
-    panels.forEach(p => p.classList.remove("active"));
-
-    link.classList.add("active");
-    const activePanelEl = document.getElementById(`panel-${targetPanel}`);
-    if (activePanelEl) activePanelEl.classList.add("active");
+    switchPanel(targetPanel);
   });
 });
 
 const savedToggleBtn = document.getElementById("saved-toggle-btn");
 if (savedToggleBtn) {
   savedToggleBtn.addEventListener("click", () => {
-    panelLinks.forEach(l => {
-      if (l.dataset.panel === "saved") l.classList.add("active");
-      else l.classList.remove("active");
-    });
-    panels.forEach(p => p.classList.remove("active"));
-    const savedPanel = document.getElementById("panel-saved");
-    if (savedPanel) savedPanel.classList.add("active");
+    switchPanel("saved");
   });
 }
 
@@ -562,21 +543,43 @@ async function toggleLike(docId) {
   const isLiked = !!localStorage.getItem(likeKey);
   const docRef = doc(db, COLLECTION_NAME, docId);
 
+  // 1) Anında yerel durumu ve arayüzü güncelle (gecikmeyi ve senkronizasyon hatasını önler)
+  if (!isLiked) {
+    localStorage.setItem(likeKey, 'true');
+  } else {
+    localStorage.removeItem(likeKey);
+  }
+
+  const entry = allEntries.find(e => e.id === docId);
+  if (entry) {
+    entry.likes = Math.max(0, (entry.likes || 0) + (!isLiked ? 1 : -1));
+  }
+  renderAllEntries();
+
+  // 2) Firestore veritabanını güncelle
   try {
     if (!isLiked) {
       await updateDoc(docRef, { likes: increment(1) });
-      localStorage.setItem(likeKey, 'true');
     } else {
       await updateDoc(docRef, { likes: increment(-1) });
-      localStorage.removeItem(likeKey);
     }
   } catch (err) {
     console.error("Beğeni işlemi hatası:", err);
+    // Hata durumunda yerel durumu geri al
+    if (!isLiked) {
+      localStorage.removeItem(likeKey);
+    } else {
+      localStorage.setItem(likeKey, 'true');
+    }
+    if (entry) {
+      entry.likes = Math.max(0, (entry.likes || 0) + (!isLiked ? -1 : 1));
+    }
+    renderAllEntries();
   }
 }
 
 /* ===================================================
-   YORUMLAR SİSTEMİ & SİLME YETKİSİ
+   YORUMLAR SİSTEMİ
    =================================================== */
 let currentCommentUnsubscribe = null;
 
@@ -600,7 +603,6 @@ function listenComments(postId, postAuthorUid) {
 
     const comments = [];
     snapshot.forEach(docSnap => comments.push({ id: docSnap.id, ...docSnap.data() }));
-    // Tarihe göre sırala
     comments.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
 
     comments.forEach((commentData) => {
@@ -796,7 +798,6 @@ if (submitBtn) {
       return;
     }
 
-    // İşlem öncesi Firebase Auth şifre doğrulaması
     const isAuthorized = await requestAuthorReauth("İçerik Paylaşımını Onayla");
     if (!isAuthorized) return;
 
@@ -860,8 +861,6 @@ function listenEntries() {
     entriesUnsubscribe = null;
   }
 
-  // Güvenlik kurallarıyla birebir uyumlu sorgu:
-  // Okuyucu modunda isHidden == false zorunludur.
   let q;
   if (currentRole === "author" && auth.currentUser) {
     q = collection(db, COLLECTION_NAME);
@@ -875,7 +874,6 @@ function listenEntries() {
       allEntries.push({ id: docSnap.id, ...docSnap.data() });
     });
 
-    // İstemci tarafında en yeniden en eskiye sırala
     allEntries.sort((a, b) => {
       const timeA = a.createdAt?.seconds || 0;
       const timeB = b.createdAt?.seconds || 0;
@@ -884,6 +882,7 @@ function listenEntries() {
 
     renderAllEntries();
     updateSavedBadge();
+    renderAuthorsList();
   }, (err) => {
     console.error("Firestore Dinleme Hatası:", err);
   });
@@ -893,11 +892,36 @@ const searchInput = document.getElementById("search-input");
 if (searchInput) {
   searchInput.addEventListener("input", () => {
     renderAllEntries();
+    renderAuthorsList();
   });
 }
 
+function searchNormalize(str) {
+  if (!str) return "";
+  return str
+    .replace(/İ/g, "i")
+    .replace(/I/g, "ı")
+    .toLowerCase()
+    .replace(/ı/g, "i")
+    .replace(/ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/ş/g, "s")
+    .replace(/ö/g, "o")
+    .replace(/ç/g, "c");
+}
+
+function filterEntriesByAuthor(authorName) {
+  if (searchInput) {
+    searchInput.value = authorName;
+    switchPanel("home");
+    renderAllEntries();
+    renderAuthorsList();
+  }
+}
+
 function renderAllEntries() {
-  const searchTerm = searchInput?.value.trim().toLowerCase() || "";
+  const rawTerm = searchInput?.value.trim() || "";
+  const searchTerm = searchNormalize(rawTerm);
   const categories = ["home", "metinler", "muzik", "resim", "fotograf", "sinema", "performans", "saved"];
 
   categories.forEach(cat => {
@@ -908,14 +932,13 @@ function renderAllEntries() {
   const savedIds = getSavedPosts();
 
   const filtered = allEntries.filter(item => {
-    // Okuyucu modu gizli içerikleri göremez
     if (item.isHidden && currentRole === "reader") return false;
 
     if (!searchTerm) return true;
-    const t = (item.title || "").toLowerCase();
-    const c = (item.comment || "").toLowerCase();
-    const a = (item.authorName || item.author || "").toLowerCase();
-    const cat = (item.category || "").toLowerCase();
+    const t = searchNormalize(item.title || "");
+    const c = searchNormalize(item.comment || "");
+    const a = searchNormalize(item.authorName || item.author || "");
+    const cat = searchNormalize(item.category || "");
     return t.includes(searchTerm) || c.includes(searchTerm) || a.includes(searchTerm) || cat.includes(searchTerm);
   });
 
@@ -984,7 +1007,6 @@ function createCard(data) {
   const rawComment = data.comment || "";
   const displayComment = rawComment.length > 40 ? rawComment.slice(0, 40) + "…" : rawComment;
 
-  // Baş harfleri büyük (Title Case) yazar ismi
   const rawAuthor = data.authorName || data.author || "Grotesk Yazarı";
   const authorDisp = toTitleCase(rawAuthor);
 
@@ -1002,7 +1024,7 @@ function createCard(data) {
     <div class="entry-meta">
       <div class="entry-cat">${(data.category || "GENEL").toUpperCase()} ${data.isOwn ? '• (Özgün)' : ''}</div>
       <div class="entry-title">${escapeHtml(displayTitle)}</div>
-      <div class="entry-own">${escapeHtml(authorDisp)}</div>
+      <div class="entry-own author-clickable" title="Yazarın yazılarını gör">${escapeHtml(authorDisp)}</div>
       ${displayComment ? `<div class="entry-preview">${escapeHtml(displayComment)}</div>` : ''}
       <div class="entry-footer-row">
         <span class="entry-date">${dateStr}</span>
@@ -1022,7 +1044,15 @@ function createCard(data) {
     </div>
   `;
 
-  // Beğeni Butonu
+  // Yazar adına tıklandığında yazara göre filtrele
+  const authorNameEl = card.querySelector(".entry-own");
+  if (authorNameEl) {
+    authorNameEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      filterEntriesByAuthor(authorDisp);
+    });
+  }
+
   const likeBtn = card.querySelector(".like-card-btn");
   if (likeBtn) {
     likeBtn.addEventListener("click", async (e) => {
@@ -1031,7 +1061,6 @@ function createCard(data) {
     });
   }
 
-  // Kaydet Butonu
   const bookBtn = card.querySelector(".bookmark-card-btn");
   if (bookBtn) {
     bookBtn.addEventListener("click", (e) => {
@@ -1040,8 +1069,6 @@ function createCard(data) {
     });
   }
 
-  // Yazar / Yönetici İşlem Butonları
-  // Yalnızca içeriğin gerçek sahibi olan yazar veya admin işlem yapabilir
   const isOwner = currentRole === "author" && auth.currentUser && (
     (data.authorUid && data.authorUid === auth.currentUser.uid) ||
     (!data.authorUid && normalizeAuthorKey(data.authorName) === currentAuthorKey) ||
@@ -1158,12 +1185,20 @@ function openViewModal(data) {
   html += `
     <div class="view-author-box">
       <span class="author-lbl">Grotesk Yazarı:</span>
-      <span class="author-val">${escapeHtml(authorDisp)}</span>
+      <span class="author-val author-clickable" title="Yazarın yazılarını gör">${escapeHtml(authorDisp)}</span>
     </div>
     <div class="view-body-clear"></div>
   `;
 
   viewBody.innerHTML = html;
+
+  const authorClickVal = viewBody.querySelector(".author-val");
+  if (authorClickVal) {
+    authorClickVal.addEventListener("click", () => {
+      viewModal.classList.add("hidden");
+      filterEntriesByAuthor(authorDisp);
+    });
+  }
 
   listenComments(data.id, data.authorUid);
 
@@ -1218,7 +1253,7 @@ function openViewModal(data) {
 }
 
 /* ===================================================
-   DÜZENLEME MODALI (SADECE İÇERİK SAHİBİ YAZAR VEYA ADMIN)
+   DÜZENLEME MODALI
    =================================================== */
 const editModal = document.getElementById("edit-modal");
 const closeEditModalBtn = document.getElementById("close-edit-modal");
@@ -1262,7 +1297,6 @@ if (submitEditBtn) {
   submitEditBtn.addEventListener("click", async () => {
     if (!currentEditingId || !auth.currentUser) return;
 
-    // Tekrar şifre doğrulaması
     const isAuthorized = await requestAuthorReauth("Değişiklikleri Kaydet");
     if (!isAuthorized) return;
 
@@ -1282,7 +1316,6 @@ if (submitEditBtn) {
         isHidden: editHidden
       };
 
-      // Eğer eski belgede authorUid eksikse bu güncellemede mevcut yazarın uid'si bağlanır
       if (!currentEditingData?.authorUid) {
         updatePayload.authorUid = auth.currentUser.uid;
         updatePayload.authorKey = currentAuthorKey;
@@ -1297,6 +1330,424 @@ if (submitEditBtn) {
     } finally {
       submitEditBtn.disabled = false;
       submitEditBtn.innerText = "Kaydet";
+    }
+  });
+}
+
+/* ===================================================
+   GROTESK YAZARLARI LİSTESİ (VİTRİN PANELİ)
+   =================================================== */
+let allAuthorsList = [];
+let currentAdminUids = new Set();
+let authorsUnsubscribe = null;
+
+async function refreshAdminUids() {
+  try {
+    const adminSnap = await getDocs(collection(db, ADMINS_COLLECTION));
+    currentAdminUids = new Set(adminSnap.docs.map(d => d.id));
+  } catch {
+    currentAdminUids = new Set();
+  }
+}
+
+function listenAuthors() {
+  if (authorsUnsubscribe) {
+    authorsUnsubscribe();
+    authorsUnsubscribe = null;
+  }
+
+  const q = collection(db, AUTHORS_COLLECTION);
+  authorsUnsubscribe = onSnapshot(q, async (snapshot) => {
+    await refreshAdminUids();
+    allAuthorsList = [];
+    snapshot.forEach(docSnap => {
+      allAuthorsList.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    renderAuthorsList();
+  }, (err) => {
+    console.warn("Yazarlar listesi dinleme:", err);
+  });
+}
+
+function renderAuthorsList() {
+  const container = document.getElementById("authors-list");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const rawTerm = searchInput?.value.trim() || "";
+  const searchTerm = searchNormalize(rawTerm);
+
+  const filteredAuthors = allAuthorsList.filter(author => {
+    if (!searchTerm) return true;
+    const name = searchNormalize(author.authorName || "");
+    const nick = searchNormalize(author.authorKey || author.id || "");
+    const bio = searchNormalize(author.bio || "");
+    return name.includes(searchTerm) || nick.includes(searchTerm) || bio.includes(searchTerm);
+  });
+
+  if (filteredAuthors.length === 0) {
+    container.innerHTML = searchTerm 
+      ? '<div class="empty">— Arama kriterine uygun yazar bulunamadı —</div>'
+      : '<div class="empty">— Henüz kayıtlı yazar bulunmuyor —</div>';
+    return;
+  }
+
+  filteredAuthors.forEach(author => {
+    const dispName = toTitleCase(author.authorName || author.id);
+    const avatar = author.avatarUrl || DEFAULT_AVATAR;
+    const bio = author.bio || "Grotesk yazarı.";
+    const authorKey = normalizeAuthorKey(author.authorKey || author.id);
+    const authorUid = author.authorUid || "";
+
+    const isAuthorAdmin = (authorUid && currentAdminUids.has(authorUid)) || author.isAdmin;
+
+    // Yazarın yayınladığı toplam yazı sayısı
+    const postCount = allEntries.filter(e => 
+      normalizeAuthorKey(e.authorKey) === authorKey ||
+      normalizeAuthorKey(e.authorName) === authorKey
+    ).length;
+
+    let adminActionBtnHtml = "";
+    if (isAdmin && authorUid) {
+      if (isAuthorAdmin) {
+        adminActionBtnHtml = `<button type="button" class="author-admin-btn is-admin" data-action="revoke">Yöneticiliği Kaldır</button>`;
+      } else {
+        adminActionBtnHtml = `<button type="button" class="author-admin-btn" data-action="grant">+ Yönetici Yap</button>`;
+      }
+    }
+
+    const card = document.createElement("div");
+    card.className = "author-card";
+    card.innerHTML = `
+      <div class="author-card-top">
+        <img src="${escapeHtml(avatar)}" alt="${escapeHtml(dispName)}" class="author-card-avatar" />
+        <div class="author-card-info">
+          <div class="author-card-name">${escapeHtml(dispName)}</div>
+          <div class="author-card-nick">
+            @${escapeHtml(authorKey)}
+            ${isAuthorAdmin ? '<span class="author-role-tag">Yönetici</span>' : ''}
+          </div>
+        </div>
+      </div>
+      <div class="author-card-bio">${escapeHtml(bio)}</div>
+      <div class="author-card-stats">${postCount} İçerik / İnceleme</div>
+      ${adminActionBtnHtml}
+    `;
+
+    card.addEventListener("click", () => {
+      filterEntriesByAuthor(dispName);
+    });
+
+    const adminToggleBtn = card.querySelector(".author-admin-btn");
+    if (adminToggleBtn) {
+      adminToggleBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const action = adminToggleBtn.dataset.action;
+        const actionText = action === "grant" ? "Yönetici Yetkisi Ver" : "Yönetici Yetkisini Kaldır";
+
+        if (!confirm(`"${dispName}" yazarının ${actionText.toLowerCase()} işlemini onaylıyor musunuz?`)) {
+          return;
+        }
+
+        const isVerified = await requestAuthorReauth(actionText);
+        if (!isVerified) return;
+
+        try {
+          if (action === "grant") {
+            await setDoc(doc(db, ADMINS_COLLECTION, authorUid), {
+              nick: authorKey,
+              createdAt: serverTimestamp()
+            });
+            await setDoc(doc(db, AUTHORS_COLLECTION, authorKey), { isAdmin: true }, { merge: true });
+          } else {
+            await deleteDoc(doc(db, ADMINS_COLLECTION, authorUid));
+            await setDoc(doc(db, AUTHORS_COLLECTION, authorKey), { isAdmin: false }, { merge: true });
+          }
+          await refreshAdminUids();
+          renderAuthorsList();
+          alert(`İşlem başarılı: "${dispName}" için ${actionText.toLowerCase()} tamamlandı.`);
+        } catch (err) {
+          console.error("Yönetici yetki işlemi hatası:", err);
+          alert("Yetki işlemi sırasında hata oluştu: " + err.message);
+        }
+      });
+    }
+
+    container.appendChild(card);
+  });
+}
+
+/* ===================================================
+   YAZAR PROFİLİ DÜZENLEME PANELİ
+   =================================================== */
+let currentProfileAvatarData = "";
+
+async function loadProfilePanelData() {
+  if (!auth.currentUser) return;
+  const profileNameInput = document.getElementById("profile-name");
+  const profileBioInput = document.getElementById("profile-bio");
+  const profileAvatarPreview = document.getElementById("profile-avatar-preview");
+  const profileStatus = document.getElementById("profile-status-msg");
+
+  if (profileStatus) profileStatus.innerText = "";
+
+  try {
+    const authorDocSnap = await getDoc(doc(db, AUTHORS_COLLECTION, currentAuthorKey));
+    if (authorDocSnap.exists()) {
+      const data = authorDocSnap.data();
+      if (profileNameInput) profileNameInput.value = data.authorName || currentAuthorName;
+      if (profileBioInput) profileBioInput.value = data.bio || "";
+      currentProfileAvatarData = data.avatarUrl || DEFAULT_AVATAR;
+      if (profileAvatarPreview) profileAvatarPreview.src = currentProfileAvatarData;
+    } else {
+      if (profileNameInput) profileNameInput.value = currentAuthorName;
+      currentProfileAvatarData = DEFAULT_AVATAR;
+      if (profileAvatarPreview) profileAvatarPreview.src = DEFAULT_AVATAR;
+    }
+  } catch (err) {
+    console.warn("Profil verisi yüklenirken hata:", err);
+  }
+}
+
+// Profil fotoğrafı seçimi
+const profileAvatarInput = document.getElementById("profile-avatar-input");
+const profileAvatarPreview = document.getElementById("profile-avatar-preview");
+const btnResetAvatar = document.getElementById("btn-reset-avatar");
+
+if (profileAvatarInput) {
+  profileAvatarInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 500 * 1024) {
+        alert("Profil görseli 500 KB'dan küçük olmalıdır.");
+        return;
+      }
+      try {
+        currentProfileAvatarData = await fileToBase64(file);
+        if (profileAvatarPreview) profileAvatarPreview.src = currentProfileAvatarData;
+      } catch (err) {
+        console.error("Görsel okunamadı:", err);
+      }
+    }
+  });
+}
+
+if (btnResetAvatar) {
+  btnResetAvatar.addEventListener("click", () => {
+    currentProfileAvatarData = DEFAULT_AVATAR;
+    if (profileAvatarPreview) profileAvatarPreview.src = DEFAULT_AVATAR;
+  });
+}
+
+// Profil Kaydetme Butonu
+const btnSaveProfile = document.getElementById("btn-save-profile");
+if (btnSaveProfile) {
+  btnSaveProfile.addEventListener("click", async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const nameInput = document.getElementById("profile-name")?.value.trim();
+    const bioInput = document.getElementById("profile-bio")?.value.trim();
+    const currentPass = document.getElementById("profile-current-pass")?.value || "";
+    const newPass = document.getElementById("profile-new-pass")?.value || "";
+    const statusMsg = document.getElementById("profile-status-msg");
+
+    if (!nameInput) {
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg error";
+        statusMsg.innerText = "Lütfen geçerli bir yazar ismi girin.";
+      }
+      return;
+    }
+
+    if (!currentPass) {
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg error";
+        statusMsg.innerText = "Değişiklikleri kaydetmek için lütfen mevcut şifrenizi girin.";
+      }
+      return;
+    }
+
+    if (newPass && newPass.length < 6) {
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg error";
+        statusMsg.innerText = "Yeni şifre en az 6 karakter olmalıdır.";
+      }
+      return;
+    }
+
+    if (currentProfileAvatarData && currentProfileAvatarData.length > 750000) {
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg error";
+        statusMsg.innerText = "Profil fotoğrafı boyutu çok büyük (maks 500 KB).";
+      }
+      return;
+    }
+
+    btnSaveProfile.disabled = true;
+    btnSaveProfile.innerText = "Güncelleniyor...";
+    if (statusMsg) {
+      statusMsg.className = "form-status-msg";
+      statusMsg.innerText = "Doğrulanıyor...";
+    }
+
+    try {
+      // 1) Mevcut şifreyi Firebase Auth ile doğrula
+      const cred = EmailAuthProvider.credential(user.email, currentPass);
+      await reauthenticateWithCredential(user, cred);
+
+      // 2) Eğer yeni şifre varsa güncelle
+      if (newPass) {
+        await updatePassword(user, newPass);
+      }
+
+      // 3) Auth profil ismini güncelle
+      const newTitleName = toTitleCase(nameInput);
+      await updateProfile(user, { displayName: newTitleName });
+
+      // 4) Firestore authors koleksiyonunu güncelle (varsa eski passcodeHash temizlenir)
+      await setDoc(doc(db, AUTHORS_COLLECTION, currentAuthorKey), {
+        authorUid: user.uid,
+        authorName: newTitleName,
+        authorKey: currentAuthorKey,
+        bio: bioInput || "",
+        avatarUrl: currentProfileAvatarData || DEFAULT_AVATAR,
+        passcodeHash: deleteField(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      currentAuthorName = newTitleName;
+      showMainSite("author");
+
+      const currentPassEl = document.getElementById("profile-current-pass");
+      const newPassEl = document.getElementById("profile-new-pass");
+      if (currentPassEl) currentPassEl.value = "";
+      if (newPassEl) newPassEl.value = "";
+
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg success";
+        statusMsg.innerText = "Profil bilgileriniz başarıyla güncellendi.";
+      }
+    } catch (err) {
+      console.error("Profil güncelleme hatası:", err);
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg error";
+        if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+          statusMsg.innerText = "Girdiğiniz mevcut şifre hatalı.";
+        } else {
+          statusMsg.innerText = "Hata: " + (err.message || "Güncelleme yapılamadı.");
+        }
+      }
+    } finally {
+      btnSaveProfile.disabled = false;
+      btnSaveProfile.innerText = "Profili Güncelle";
+    }
+  });
+}
+
+/* ===================================================
+   YÖNETİCİ: YENİ YAZAR EKLEME (İKİNCİL AUTH İLE)
+   =================================================== */
+const btnAdminCreateAuthor = document.getElementById("btn-admin-create-author");
+if (btnAdminCreateAuthor) {
+  btnAdminCreateAuthor.addEventListener("click", async () => {
+    if (!isAdmin) {
+      alert("Bu işlem yalnızca yöneticiler için geçerlidir.");
+      return;
+    }
+
+    const newNickInput = document.getElementById("admin-new-nick");
+    const newPassInput = document.getElementById("admin-new-pass");
+    const newBioInput = document.getElementById("admin-new-bio");
+    const statusMsg = document.getElementById("admin-create-status");
+
+    const nick = newNickInput?.value.trim() || "";
+    const pass = newPassInput?.value || "";
+    const bio = newBioInput?.value.trim() || "";
+
+    if (!nick) {
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg error";
+        statusMsg.innerText = "Lütfen yeni yazar ismi girin.";
+      }
+      return;
+    }
+
+    if (!pass || pass.length < 6) {
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg error";
+        statusMsg.innerText = "Şifre en az 6 karakter olmalıdır.";
+      }
+      return;
+    }
+
+    const cleanKey = normalizeAuthorKey(nick);
+    const newEmail = nickToInternalEmail(nick);
+    const dispName = toTitleCase(nick);
+    const makeAdmin = document.getElementById("admin-new-is-admin")?.checked || false;
+
+    btnAdminCreateAuthor.disabled = true;
+    btnAdminCreateAuthor.innerText = "Oluşturuluyor...";
+    if (statusMsg) {
+      statusMsg.className = "form-status-msg";
+      statusMsg.innerText = "Hesap açılıyor...";
+    }
+
+    try {
+      // Admin oturumunu düşürmemek için izole ikincil Firebase instance kullanılır
+      const secondaryApp = getApps().find(a => a.name === "SecondaryAuth") || initializeApp(firebaseConfig, "SecondaryAuth");
+      const secondaryAuth = getAuth(secondaryApp);
+
+      const userCred = await createUserWithEmailAndPassword(secondaryAuth, newEmail, pass);
+      await updateProfile(userCred.user, { displayName: dispName });
+      await signOut(secondaryAuth); // İkincil oturumu hemen kapat
+
+      // Firestore authors kaydı ekle
+      await setDoc(doc(db, AUTHORS_COLLECTION, cleanKey), {
+        authorUid: userCred.user.uid,
+        authorName: dispName,
+        authorKey: cleanKey,
+        bio: bio || "Grotesk yazarı.",
+        avatarUrl: DEFAULT_AVATAR,
+        isAdmin: makeAdmin,
+        createdAt: serverTimestamp()
+      });
+
+      // Eğer yönetici olarak işaretlendiyse admins koleksiyonuna ekle
+      if (makeAdmin) {
+        await setDoc(doc(db, ADMINS_COLLECTION, userCred.user.uid), {
+          nick: cleanKey,
+          createdAt: serverTimestamp()
+        });
+      }
+
+      if (newNickInput) newNickInput.value = "";
+      if (newPassInput) newPassInput.value = "";
+      if (newBioInput) newBioInput.value = "";
+      if (document.getElementById("admin-new-is-admin")) {
+        document.getElementById("admin-new-is-admin").checked = false;
+      }
+
+      await refreshAdminUids();
+      renderAuthorsList();
+
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg success";
+        statusMsg.innerText = `'${dispName}' başarıyla yazar${makeAdmin ? ' ve YÖNETİCİ' : ''} olarak eklendi!`;
+      }
+    } catch (err) {
+      console.error("Yazar oluşturma hatası:", err);
+      if (statusMsg) {
+        statusMsg.className = "form-status-msg error";
+        if (err.code === "auth/email-already-in-use") {
+          statusMsg.innerText = "Bu yazar ismi zaten sistemde kayıtlı.";
+        } else {
+          statusMsg.innerText = "Hata: " + (err.message || "Yazar oluşturulamadı.");
+        }
+      }
+    } finally {
+      btnAdminCreateAuthor.disabled = false;
+      btnAdminCreateAuthor.innerText = "+ Yeni Yazarı Kaydet";
     }
   });
 }
