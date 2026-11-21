@@ -46,6 +46,8 @@
             <a href="#" class="panel-link" data-panel="fotograf">Fotoğraf</a>
             <a href="#" class="panel-link" data-panel="sinema">Sinema</a>
             <a href="#" class="panel-link" data-panel="performans">Performans</a>
+            <a href="#" class="panel-link" data-panel="yazarlar">Grotesk Yazarları</a>
+            <a href="#" class="panel-link hidden" id="nav-profile-link" data-panel="profile">Yazar Profili</a>
             <a href="#" class="panel-link" data-panel="saved">Kaydedilenler</a>
           </nav>
           <div class="sidebar-footer">
@@ -100,6 +102,69 @@
         <section class="panel" id="panel-performans">
           <button class="add-btn" data-cat="performans">+ İçerik Ekle</button>
           <div class="entries-list" id="performans-entries"></div>
+        </section>
+
+        <section class="panel" id="panel-yazarlar">
+          <h2 class="panel-header-title">Grotesk Yazarları</h2>
+          <div class="authors-grid" id="authors-list"></div>
+        </section>
+
+        <section class="panel" id="panel-profile">
+          <div class="profile-box">
+            <h2 class="panel-header-title">Yazar Profili</h2>
+            <div class="profile-avatar-wrap">
+              <img id="profile-avatar-preview" src="avatar-angel.png" alt="Avatar" class="profile-avatar-img" />
+              <div class="profile-avatar-actions">
+                <label class="file-pick-label" for="profile-avatar-input">Fotoğraf Değiştir</label>
+                <input type="file" id="profile-avatar-input" accept="image/*" style="display:none;" />
+                <button type="button" id="btn-reset-avatar" class="act-btn" style="padding: 4px 10px; font-size: 0.75rem;">Varsayılana Dön</button>
+              </div>
+            </div>
+            <div class="mf">
+              <label>Yazar İsmi</label>
+              <input type="text" id="profile-name" placeholder="Görünen İsim" />
+            </div>
+            <div class="mf">
+              <label>Biyografi / Hakkında</label>
+              <textarea id="profile-bio" rows="4" placeholder="Kısa bir biyografi yazın..."></textarea>
+            </div>
+            <div class="mf">
+              <label>Mevcut Şifre <span class="mf-sub">değişiklikleri onaylamak için zorunludur</span></label>
+              <input type="password" id="profile-current-pass" placeholder="Mevcut şifreniz" />
+            </div>
+            <div class="mf">
+              <label>Yeni Şifre <span class="mf-sub">şifrenizi değiştirmek istemiyorsanız boş bırakın</span></label>
+              <input type="password" id="profile-new-pass" placeholder="Yeni şifreniz" />
+            </div>
+            <p id="profile-status-msg" class="form-status-msg"></p>
+            <button type="button" id="btn-save-profile" class="submit-btn">Profili Güncelle</button>
+
+            <!-- YALNIZCA ADMİN İÇİN YAZAR EKLEME BÖLÜMÜ -->
+            <div id="admin-create-author-wrap" class="admin-create-author-wrap hidden">
+              <div class="admin-divider"></div>
+              <h3 class="panel-header-title" style="font-size: 1.25rem; margin-bottom: 20px;">Yeni Yazar Ekle (Yönetici)</h3>
+              <div class="mf">
+                <label>Yeni Yazar İsmi / Nick</label>
+                <input type="text" id="admin-new-nick" placeholder="Örn: Kuzgun" />
+              </div>
+              <div class="mf">
+                <label>Başlangıç Şifresi</label>
+                <input type="password" id="admin-new-pass" placeholder="En az 6 karakter" />
+              </div>
+              <div class="mf">
+                <label>Biyografi (İsteğe bağlı)</label>
+                <textarea id="admin-new-bio" rows="2" placeholder="Yazar hakkında kısa açıklama..."></textarea>
+              </div>
+              <div class="mf">
+                <label class="cb-label">
+                  <input type="checkbox" id="admin-new-is-admin" />
+                  Bu yazara Yönetici (Admin) yetkisi ver
+                </label>
+              </div>
+              <p id="admin-create-status" class="form-status-msg"></p>
+              <button type="button" id="btn-admin-create-author" class="submit-btn">+ Yeni Yazarı Kaydet</button>
+            </div>
+          </div>
         </section>
 
         <section class="panel" id="panel-saved">
@@ -229,7 +294,7 @@
     <div class="modal-box" style="max-width: 480px; text-align: center;">
       <h2 class="modal-title" style="margin-bottom: 20px;">Grotesk</h2>
       <p style="font-size: 0.98rem; color: #d0d0d0; line-height: 1.8; margin-bottom: 28px;">
-        Grotesk'e hoş geldiniz. Edebiyat, müzik, resim ve sinema gibi alanlardaki bağımsız metinlerimize ulaşabilir, kendi kaleminizle bu alana dahil olabilirsiniz. Hazır kalıpların dışında duran, sığlaştırılmamış ve vitrinlere kapatılmamış bir üretim alanı arıyorsanız sizi Grotesk yazar ekibimize davet ediyoruz; mailimiz üzerinden bizimle iletişime geçin.
+        Grotesk; edebiyat, müzik, sinema ve görsel sanatlar üzerine bağımsız metinlerin, özgün üretimlerin ve incelemelerin paylaşıldığı minimalist bir kültür platformudur.
       </p>
       <button type="button" class="submit-btn" id="btn-notice-dismiss" style="margin-top: 0;">Keşfet</button>
     </div>
@@ -247,11 +312,7 @@
         <input type="password" id="author-auth-pass" placeholder="Şifrenizi girin…" />
       </div>
 
-      <div id="author-auth-info-box" class="hidden" style="margin-bottom: 22px; padding: 14px 16px; border: 1px solid #444; background: #0c0c0c;">
-        <p style="font-size: 0.88rem; color: #e0e0e0; line-height: 1.6;">
-          Eğer bu girdiğin şifreyi unutursan <span style="color:#fff; text-decoration:underline;">groteskwebcontact@gmail.com</span> adresi ile iletişime geçebilirsin.
-        </p>
-      </div>
+
 
       <p id="author-auth-error" style="color: #ff6b6b; font-size: 0.84rem; min-height: 18px; margin-bottom: 12px; line-height: 1.4;"></p>
 
