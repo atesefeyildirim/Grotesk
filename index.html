@@ -48,6 +48,7 @@
             <a href="#" class="panel-link" data-panel="performans">Performans</a>
             <a href="#" class="panel-link" data-panel="yazarlar">Grotesk Yazarları</a>
             <a href="#" class="panel-link hidden" id="nav-profile-link" data-panel="profile">Yazar Profili</a>
+            <a href="#" class="panel-link hidden" id="nav-add-author-link" data-panel="add-author">Yazar Ekle</a>
             <a href="#" class="panel-link" data-panel="saved">Kaydedilenler</a>
           </nav>
           <div class="sidebar-footer">
@@ -138,32 +139,33 @@
             </div>
             <p id="profile-status-msg" class="form-status-msg"></p>
             <button type="button" id="btn-save-profile" class="submit-btn">Profili Güncelle</button>
+          </div>
+        </section>
 
-            <!-- YALNIZCA ADMİN İÇİN YAZAR EKLEME BÖLÜMÜ -->
-            <div id="admin-create-author-wrap" class="admin-create-author-wrap hidden">
-              <div class="admin-divider"></div>
-              <h3 class="panel-header-title" style="font-size: 1.25rem; margin-bottom: 20px;">Yeni Yazar Ekle (Yönetici)</h3>
-              <div class="mf">
-                <label>Yeni Yazar İsmi / Nick</label>
-                <input type="text" id="admin-new-nick" placeholder="Örn: Kuzgun" />
-              </div>
-              <div class="mf">
-                <label>Başlangıç Şifresi</label>
-                <input type="password" id="admin-new-pass" placeholder="En az 6 karakter" />
-              </div>
-              <div class="mf">
-                <label>Biyografi (İsteğe bağlı)</label>
-                <textarea id="admin-new-bio" rows="2" placeholder="Yazar hakkında kısa açıklama..."></textarea>
-              </div>
-              <div class="mf">
-                <label class="cb-label">
-                  <input type="checkbox" id="admin-new-is-admin" />
-                  Bu yazara Yönetici (Admin) yetkisi ver
-                </label>
-              </div>
-              <p id="admin-create-status" class="form-status-msg"></p>
-              <button type="button" id="btn-admin-create-author" class="submit-btn">+ Yeni Yazarı Kaydet</button>
+        <!-- YAZAR EKLE PANELİ (YALNIZCA ADMİN) -->
+        <section class="panel" id="panel-add-author">
+          <div class="profile-box">
+            <h2 class="panel-header-title">Yazar Ekle</h2>
+            <div class="mf">
+              <label>Yeni Yazar İsmi / Nick</label>
+              <input type="text" id="admin-new-nick" placeholder="Örn: Kuzgun" />
             </div>
+            <div class="mf">
+              <label>Başlangıç Şifresi</label>
+              <input type="password" id="admin-new-pass" placeholder="En az 6 karakter" />
+            </div>
+            <div class="mf">
+              <label>Biyografi (İsteğe bağlı)</label>
+              <textarea id="admin-new-bio" rows="3" placeholder="Yazar hakkında kısa açıklama..."></textarea>
+            </div>
+            <div class="mf">
+              <label class="cb-label">
+                <input type="checkbox" id="admin-new-is-admin" />
+                Bu yazara Yönetici (Admin) yetkisi ver
+              </label>
+            </div>
+            <p id="admin-create-status" class="form-status-msg"></p>
+            <button type="button" id="btn-admin-create-author" class="submit-btn">+ Yeni Yazarı Kaydet</button>
           </div>
         </section>
 
@@ -320,6 +322,32 @@
         <button type="button" class="submit-btn" id="btn-author-auth-submit" style="flex: 1;">Onayla</button>
         <button type="button" class="submit-btn" id="btn-author-auth-cancel" style="flex: 1; border-color: #444; color: #888;">İptal</button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: YAZAR PROFİLİ DÜZENLEME (ADMİN) -->
+  <div class="modal-overlay hidden" id="author-edit-modal">
+    <div class="modal-box" style="max-width: 480px;">
+      <button class="modal-close" id="close-author-edit-modal">✕</button>
+      <h2 class="modal-title" id="author-edit-modal-title">Yazar Profili</h2>
+      <div class="profile-avatar-wrap" style="margin-bottom: 18px;">
+        <img id="author-edit-avatar-preview" src="avatar-angel.png" alt="Avatar" class="profile-avatar-img" />
+        <div class="profile-avatar-actions">
+          <label class="file-pick-label" for="author-edit-avatar-input">Fotoğraf Değiştir</label>
+          <input type="file" id="author-edit-avatar-input" accept="image/*" style="display:none;" />
+          <button type="button" id="btn-author-edit-reset-avatar" class="act-btn" style="padding: 4px 10px; font-size: 0.75rem;">Varsayılana Dön</button>
+        </div>
+      </div>
+      <div class="mf">
+        <label>Yazar İsmi</label>
+        <input type="text" id="author-edit-name" placeholder="Görünen İsim" />
+      </div>
+      <div class="mf">
+        <label>Biyografi / Hakkında</label>
+        <textarea id="author-edit-bio" rows="4" placeholder="Kısa bir biyografi..."></textarea>
+      </div>
+      <p id="author-edit-status" class="form-status-msg"></p>
+      <button type="button" id="btn-author-edit-save" class="submit-btn">Değişiklikleri Kaydet</button>
     </div>
   </div>
 
