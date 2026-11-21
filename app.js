@@ -134,6 +134,7 @@ const btnReader = document.getElementById("btn-reader-login");
 const logoutBtn = document.getElementById("logout-btn");
 const roleBadge = document.getElementById("role-badge");
 const navProfileLink = document.getElementById("nav-profile-link");
+const navAddAuthorLink = document.getElementById("nav-add-author-link");
 const adminCreateAuthorWrap = document.getElementById("admin-create-author-wrap");
 
 // Oturum durumu dinleyicisi
@@ -205,6 +206,11 @@ function showMainSite(role) {
   if (navProfileLink) {
     if (role === "author") navProfileLink.classList.remove("hidden");
     else navProfileLink.classList.add("hidden");
+  }
+
+  if (navAddAuthorLink) {
+    if (isAdmin) navAddAuthorLink.classList.remove("hidden");
+    else navAddAuthorLink.classList.add("hidden");
   }
 
   if (adminCreateAuthorWrap) {
@@ -1010,6 +1016,12 @@ function createCard(data) {
   const rawAuthor = data.authorName || data.author || "Grotesk Yazarı";
   const authorDisp = toTitleCase(rawAuthor);
 
+  // Yazar avatar küçük görseli için allAuthorsList'ten bul
+  const authorProfile = allAuthorsList.find(a =>
+    normalizeAuthorKey(a.authorKey || a.id) === normalizeAuthorKey(rawAuthor)
+  );
+  const authorInlineAvatar = authorProfile?.avatarUrl || DEFAULT_AVATAR;
+
   const isLiked = !!localStorage.getItem('liked_' + data.id);
   const isSaved = isPostSaved(data.id);
   const viewsCount = data.views || 0;
@@ -1024,7 +1036,7 @@ function createCard(data) {
     <div class="entry-meta">
       <div class="entry-cat">${(data.category || "GENEL").toUpperCase()} ${data.isOwn ? '• (Özgün)' : ''}</div>
       <div class="entry-title">${escapeHtml(displayTitle)}</div>
-      <div class="entry-own author-clickable" title="Yazarın yazılarını gör">${escapeHtml(authorDisp)}</div>
+      <div class="entry-own author-clickable" title="Yazarın yazılarını gör"><img src="${escapeHtml(authorInlineAvatar)}" class="author-inline-avatar" alt="" /><span>${escapeHtml(authorDisp)}</span></div>
       ${displayComment ? `<div class="entry-preview">${escapeHtml(displayComment)}</div>` : ''}
       <div class="entry-footer-row">
         <span class="entry-date">${dateStr}</span>
@@ -1163,6 +1175,12 @@ function openViewModal(data) {
   const rawAuthor = data.authorName || data.author || "Grotesk Yazarı";
   const authorDisp = toTitleCase(rawAuthor);
 
+  // Modal için yazar avatarı
+  const viewAuthorProfile = allAuthorsList.find(a =>
+    normalizeAuthorKey(a.authorKey || a.id) === normalizeAuthorKey(rawAuthor)
+  );
+  const viewAuthorAvatar = viewAuthorProfile?.avatarUrl || DEFAULT_AVATAR;
+
   let mediaHtml = "";
   if (mediaData) {
     if (isImage) {
@@ -1185,6 +1203,7 @@ function openViewModal(data) {
   html += `
     <div class="view-author-box">
       <span class="author-lbl">Grotesk Yazarı:</span>
+      <img src="${escapeHtml(viewAuthorAvatar)}" class="author-inline-avatar" alt="" style="margin: 0 6px 0 8px;" />
       <span class="author-val author-clickable" title="Yazarın yazılarını gör">${escapeHtml(authorDisp)}</span>
     </div>
     <div class="view-body-clear"></div>
@@ -1341,6 +1360,118 @@ let allAuthorsList = [];
 let currentAdminUids = new Set();
 let authorsUnsubscribe = null;
 
+/* ===================================================
+   YÖNETİCİ: YAZAR PROFİLİ DÜZENLEME MODALI
+   =================================================== */
+let authorEditAvatarData = "";
+let authorEditTargetKey = "";
+
+const authorEditModal = document.getElementById("author-edit-modal");
+const closeAuthorEditModalBtn = document.getElementById("close-author-edit-modal");
+const authorEditAvatarPreview = document.getElementById("author-edit-avatar-preview");
+const authorEditAvatarInput = document.getElementById("author-edit-avatar-input");
+const btnAuthorEditResetAvatar = document.getElementById("btn-author-edit-reset-avatar");
+const btnAuthorEditSave = document.getElementById("btn-author-edit-save");
+
+if (closeAuthorEditModalBtn) {
+  closeAuthorEditModalBtn.addEventListener("click", () => {
+    if (authorEditModal) authorEditModal.classList.add("hidden");
+  });
+}
+if (authorEditModal) {
+  authorEditModal.addEventListener("click", (e) => {
+    if (e.target === authorEditModal) authorEditModal.classList.add("hidden");
+  });
+}
+if (authorEditAvatarInput) {
+  authorEditAvatarInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 500 * 1024) {
+      alert("Profil görseli 500 KB'dan küçük olmalıdır.");
+      return;
+    }
+    try {
+      authorEditAvatarData = await fileToBase64(file);
+      if (authorEditAvatarPreview) authorEditAvatarPreview.src = authorEditAvatarData;
+    } catch (err) {
+      console.error("Görsel okunamadı:", err);
+    }
+  });
+}
+if (btnAuthorEditResetAvatar) {
+  btnAuthorEditResetAvatar.addEventListener("click", () => {
+    authorEditAvatarData = DEFAULT_AVATAR;
+    if (authorEditAvatarPreview) authorEditAvatarPreview.src = DEFAULT_AVATAR;
+  });
+}
+
+function openAuthorEditModal(author) {
+  if (!authorEditModal) return;
+  const titleEl = document.getElementById("author-edit-modal-title");
+  const nameInput = document.getElementById("author-edit-name");
+  const bioInput = document.getElementById("author-edit-bio");
+  const statusEl = document.getElementById("author-edit-status");
+
+  authorEditTargetKey = normalizeAuthorKey(author.authorKey || author.id);
+  const dispName = toTitleCase(author.authorName || author.id);
+
+  if (titleEl) titleEl.innerText = `Profil: ${dispName}`;
+  if (nameInput) nameInput.value = author.authorName || "";
+  if (bioInput) bioInput.value = author.bio || "";
+  if (statusEl) { statusEl.innerText = ""; statusEl.className = "form-status-msg"; }
+
+  authorEditAvatarData = author.avatarUrl || DEFAULT_AVATAR;
+  if (authorEditAvatarPreview) authorEditAvatarPreview.src = authorEditAvatarData;
+  if (authorEditAvatarInput) authorEditAvatarInput.value = "";
+
+  authorEditModal.classList.remove("hidden");
+}
+
+if (btnAuthorEditSave) {
+  btnAuthorEditSave.addEventListener("click", async () => {
+    if (!isAdmin || !authorEditTargetKey) return;
+    const nameInput = document.getElementById("author-edit-name");
+    const bioInput = document.getElementById("author-edit-bio");
+    const statusEl = document.getElementById("author-edit-status");
+
+    const newName = nameInput?.value.trim() || "";
+    const newBio = bioInput?.value.trim() || "";
+
+    if (!newName) {
+      if (statusEl) { statusEl.className = "form-status-msg error"; statusEl.innerText = "Lütfen bir yazar ismi girin."; }
+      return;
+    }
+
+    if (authorEditAvatarData && authorEditAvatarData.length > 750000) {
+      if (statusEl) { statusEl.className = "form-status-msg error"; statusEl.innerText = "Profil fotoğrafı boyutu çok büyük (maks 500 KB)."; }
+      return;
+    }
+
+    btnAuthorEditSave.disabled = true;
+    btnAuthorEditSave.innerText = "Kaydediliyor...";
+    if (statusEl) { statusEl.className = "form-status-msg"; statusEl.innerText = ""; }
+
+    try {
+      const newTitleName = toTitleCase(newName);
+      await setDoc(doc(db, AUTHORS_COLLECTION, authorEditTargetKey), {
+        authorName: newTitleName,
+        bio: newBio || "",
+        avatarUrl: authorEditAvatarData || DEFAULT_AVATAR,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      if (statusEl) { statusEl.className = "form-status-msg success"; statusEl.innerText = "Profil başarıyla güncellendi."; }
+    } catch (err) {
+      console.error("Admin profil güncelleme hatası:", err);
+      if (statusEl) { statusEl.className = "form-status-msg error"; statusEl.innerText = "Hata: " + (err.message || "Güncelleme yapılamadı."); }
+    } finally {
+      btnAuthorEditSave.disabled = false;
+      btnAuthorEditSave.innerText = "Değişiklikleri Kaydet";
+    }
+  });
+}
+
 async function refreshAdminUids() {
   try {
     const adminSnap = await getDocs(collection(db, ADMINS_COLLECTION));
@@ -1410,7 +1541,10 @@ function renderAuthorsList() {
     let adminActionBtnHtml = "";
     if (isAdmin && authorUid) {
       if (isAuthorAdmin) {
-        adminActionBtnHtml = `<button type="button" class="author-admin-btn is-admin" data-action="revoke">Yöneticiliği Kaldır</button>`;
+        // Kendi kartında "Yöneticiliği Kaldır" butonunu gösterme
+        if (authorUid !== auth.currentUser?.uid) {
+          adminActionBtnHtml = `<button type="button" class="author-admin-btn is-admin" data-action="revoke">Yöneticiliği Kaldır</button>`;
+        }
       } else {
         adminActionBtnHtml = `<button type="button" class="author-admin-btn" data-action="grant">+ Yönetici Yap</button>`;
       }
@@ -1435,7 +1569,13 @@ function renderAuthorsList() {
     `;
 
     card.addEventListener("click", () => {
-      filterEntriesByAuthor(dispName);
+      if (isAdmin) {
+        openAuthorEditModal(author);
+      } else if (currentRole === "author" && auth.currentUser && authorUid === auth.currentUser.uid) {
+        switchPanel("profile");
+      } else {
+        filterEntriesByAuthor(dispName);
+      }
     });
 
     const adminToggleBtn = card.querySelector(".author-admin-btn");
