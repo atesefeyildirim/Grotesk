@@ -815,6 +815,23 @@ body.role-reader #edit-modal {
   text-decoration: underline;
 }
 
+.author-inline-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #444;
+  vertical-align: middle;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.entry-own {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
 .site-contact-footer a {
   color: #dcdcdc;
   text-decoration: none;
